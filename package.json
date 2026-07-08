@@ -1,0 +1,21 @@
+{
+  "name": "nextgenagent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Next-Gen Super Agent for Student",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @nextgen/web run dev",
+    "dev:worker": "npm --workspace @nextgen/worker run dev",
+    "build": "npm --workspaces run build",
+    "typecheck": "npm --workspaces run typecheck",
+    "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py DB/Interview_DB1.pdf data/processed/interview-db1.chunks.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

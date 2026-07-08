@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.local
+coverage/
+data/processed/*.tmp.json
+logs/
