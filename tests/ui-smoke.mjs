@@ -1,0 +1,119 @@
+import { chromium } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+
+const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:5173";
+const outputDir = path.resolve("artifacts/screenshots");
+await mkdir(outputDir, { recursive: true });
+
+const browser = await chromium.launch({ channel: "msedge", headless: true });
+const results = {};
+
+try {
+  const desktop = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await desktop.newPage();
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.screenshot({ path: path.join(outputDir, "hub-desktop.png"), fullPage: true });
+
+  await page.getByTestId("mentor-pathfinder").click();
+  await page.getByTestId("dialogue-box").click();
+  await page.getByLabel("선배에게 보낼 말").fill("첫 줄");
+  await page.getByLabel("선배에게 보낼 말").press("Shift+Enter");
+  const shiftEnterWorks = (await page.getByLabel("선배에게 보낼 말").inputValue()).includes("\n");
+
+  await page.getByLabel("선배에게 보낼 말").fill(
+    "저는 곧 대학을 졸업하는데 무엇을 준비해야 할까요?"
+  );
+  await page.getByLabel("선배에게 보낼 말").press("Enter");
+  await page.locator(".thinking-line").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator(".thinking-line").waitFor({ state: "hidden", timeout: 90000 });
+  await page.getByTestId("choice-1").waitFor({ state: "visible", timeout: 90000 });
+  await page.getByTestId("dialogue-box").click();
+  await page.waitForFunction(() => {
+    const image = document.querySelector(".mentor-portrait img");
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+  });
+  await page.waitForTimeout(500);
+
+  const choices = await page.locator('[data-testid^="choice-"]').count();
+  await page.screenshot({
+    path: path.join(outputDir, "conversation-desktop.png"),
+    fullPage: true
+  });
+
+  await page.getByLabel("이 답변의 바탕 열기").click();
+  const sourceDrawer = page.getByRole("dialog", { name: "이 답변의 바탕" });
+  await sourceDrawer.waitFor({ state: "visible" });
+  await page.waitForTimeout(650);
+  const sourceDrawerVisible = await sourceDrawer.isVisible();
+  await page.screenshot({
+    path: path.join(outputDir, "sources-desktop.png"),
+    fullPage: true
+  });
+  await sourceDrawer.getByLabel("이 답변의 바탕 닫기").click();
+
+  await page.reload({ waitUntil: "networkidle" });
+  const sessionRestored = await page.getByTestId("dialogue-box").isVisible();
+
+  results.desktop = {
+    choices,
+    shiftEnterWorks,
+    sourceDrawerVisible,
+    sessionRestored,
+    pageErrors
+  };
+  await desktop.close();
+
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const mobilePage = await mobile.newPage();
+  await mobilePage.goto(baseUrl, { waitUntil: "networkidle" });
+  await mobilePage.getByTestId("mentor-pathfinder").click();
+  await mobilePage.getByTestId("dialogue-box").click();
+  await mobilePage.locator(".mentor-portrait").waitFor({ state: "visible" });
+  await mobilePage.waitForTimeout(500);
+
+  const keySelectors = [
+    ".conversation-toolbar",
+    ".mentor-portrait",
+    '[data-testid="dialogue-box"]',
+    ".conversation-composer"
+  ];
+  const viewportChecks = [];
+  for (const selector of keySelectors) {
+    const box = await mobilePage.locator(selector).boundingBox();
+    viewportChecks.push({
+      selector,
+      box,
+      visible: Boolean(
+        box &&
+          box.x >= 0 &&
+          box.y >= 0 &&
+          box.x + box.width <= 390 &&
+          box.y < 844
+      )
+    });
+  }
+
+  await mobilePage.screenshot({
+    path: path.join(outputDir, "conversation-mobile.png"),
+    fullPage: true
+  });
+  results.mobile = { viewportChecks };
+  await mobile.close();
+
+  const passed =
+    results.desktop.choices === 3 &&
+    results.desktop.shiftEnterWorks &&
+    results.desktop.sourceDrawerVisible &&
+    results.desktop.sessionRestored &&
+    results.desktop.pageErrors.length === 0 &&
+    results.mobile.viewportChecks.every((check) => check.visible);
+
+  console.log(JSON.stringify({ passed, ...results }, null, 2));
+  if (!passed) process.exitCode = 1;
+} finally {
+  await browser.close();
+}

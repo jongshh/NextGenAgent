@@ -1,0 +1,5 @@
+OPENAI_API_KEY=sk-your-key
+OPENAI_VECTOR_STORE_ID=vs-your-vector-store
+OPENAI_MODEL=gpt-5.5
+OPENAI_MODERATION_MODEL=omni-moderation-latest
+ALLOWED_ORIGIN=http://localhost:5173

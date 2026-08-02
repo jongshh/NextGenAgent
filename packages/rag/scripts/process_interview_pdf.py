@@ -190,6 +190,8 @@ def build_chunks(source_pdf: Path) -> list[dict]:
                     "pageRange": [fragment.page, fragment.page],
                     "quoteLevel": quote_level,
                     "confidence": infer_confidence(content, quote_level),
+                    "reviewStatus": "needs_review",
+                    "sourceTitle": "Interview_DB1",
                     "content": content,
                 }
                 )

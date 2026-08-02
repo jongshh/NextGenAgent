@@ -13,9 +13,14 @@
     "dev:worker": "npm --workspace @nextgen/worker run dev",
     "build": "npm --workspaces run build",
     "typecheck": "npm --workspaces run typecheck",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "node tests/ui-smoke.mjs",
+    "deploy": "npm run build && npm --workspace @nextgen/worker run deploy",
     "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py DB/Interview_DB1.pdf data/processed/interview-db1.chunks.json"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "tsx": "^4.23.1",
     "typescript": "^5.5.4"
   }
 }
