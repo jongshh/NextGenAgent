@@ -9,3 +9,6 @@ logs/
 artifacts/
 /Storygator
 *.bat
+supabase/.temp/
+supabase/functions/.env
+supabase/.env

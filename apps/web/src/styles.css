@@ -26,7 +26,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -39,6 +40,154 @@ textarea:focus-visible,
 a:focus-visible {
   outline: 3px solid rgba(241, 184, 75, 0.72);
   outline-offset: 3px;
+}
+
+.session-gate {
+  position: relative;
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  overflow: hidden;
+  padding: 28px;
+  background: #17211c;
+  color: #f7f5ef;
+}
+
+.session-gate-background,
+.session-gate-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.session-gate-background {
+  object-fit: cover;
+}
+
+.session-gate-overlay {
+  background: rgba(9, 15, 12, 0.66);
+}
+
+.session-gate-panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  padding: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(20, 29, 24, 0.94);
+  box-shadow: 0 24px 70px rgba(5, 9, 7, 0.34);
+}
+
+.wordmark.wordmark-light {
+  color: #ffffff;
+}
+
+.wordmark.wordmark-light small {
+  color: #b9c5be;
+}
+
+.session-gate-copy {
+  margin-top: 54px;
+}
+
+.session-gate-copy .section-kicker {
+  margin: 0 0 12px;
+}
+
+.session-gate-copy h1 {
+  margin: 0;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: 2.15rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.session-gate-copy > p:last-child {
+  margin: 16px 0 0;
+  color: #c4d0c9;
+  line-height: 1.7;
+}
+
+.session-form {
+  margin-top: 30px;
+}
+
+.session-form > label {
+  display: block;
+  margin-bottom: 9px;
+  color: #f0cf89;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.session-input-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 9px;
+  min-height: 58px;
+  padding: 5px 5px 5px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 7px;
+  background: #f6f6f1;
+  color: #526159;
+}
+
+.session-input-row input {
+  min-width: 0;
+  height: 46px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1d2822;
+  font-size: 1rem;
+}
+
+.session-input-row button {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #eab854;
+  color: #172019;
+  cursor: pointer;
+}
+
+.session-input-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.session-error {
+  margin: 10px 0 0;
+  color: #f0a497;
+  font-size: 0.8rem;
+}
+
+.session-privacy-note {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  color: #aebbb4;
+}
+
+.session-privacy-note svg {
+  color: #5fb1a1;
+}
+
+.session-privacy-note p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.55;
 }
 
 .hub-shell {
@@ -180,10 +329,6 @@ a:focus-visible {
   background: rgba(14, 20, 17, 0.28);
 }
 
-.mentor-card:not(.mentor-card-pathfinder) img {
-  filter: saturate(0.72) brightness(0.78);
-}
-
 .mentor-card-status {
   display: flex;
   align-items: center;
@@ -194,14 +339,15 @@ a:focus-visible {
   font-weight: 800;
 }
 
-.coming-soon {
+.mentor-available {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   padding: 5px 8px;
   border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: 999px;
+  border-radius: 5px;
   background: rgba(21, 27, 24, 0.68);
+  color: #d8e3dc;
+  font-size: 0.65rem;
 }
 
 .mentor-card-copy {
@@ -457,11 +603,17 @@ a:focus-visible {
   font-size: 0.64rem;
 }
 
-.dialogue-box > p {
+.dialogue-box > p,
+.spoken-lines p {
   margin: 0;
   white-space: pre-wrap;
   font-size: 0.98rem;
   line-height: 1.72;
+}
+
+.spoken-lines {
+  display: grid;
+  gap: 8px;
 }
 
 .dialogue-box .thinking-line {
@@ -740,6 +892,22 @@ a:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .session-gate {
+    padding: 16px;
+  }
+
+  .session-gate-panel {
+    padding: 24px 20px;
+  }
+
+  .session-gate-copy {
+    margin-top: 42px;
+  }
+
+  .session-gate-copy h1 {
+    font-size: 1.8rem;
+  }
+
   .hub-shell {
     padding: 16px;
   }

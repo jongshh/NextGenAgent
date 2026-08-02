@@ -1,4 +1,4 @@
-import { COMMON_SUPER_AGENT_SYSTEM_PROMPT, getAgentConfig, isAgentId, type AgentId } from "@nextgen/agents";
+import { AGENTS, COMMON_SUPER_AGENT_SYSTEM_PROMPT, getAgentConfig, isAgentId, type AgentId } from "@nextgen/agents";
 import {
   estimateGroundingConfidence,
   mergeSemanticEvidence,
@@ -6,13 +6,15 @@ import {
   type RagChunk,
   type RetrievedEvidence
 } from "@nextgen/rag";
-import interviewChunks from "../../../data/processed/interview-db1.chunks.json";
+import dreamMentorChunks from "../../../data/processed/dream-mentor.chunks.json";
 
 interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_VECTOR_STORE_ID?: string;
   OPENAI_MODEL?: string;
   OPENAI_MODERATION_MODEL?: string;
+  SUPABASE_FUNCTIONS_URL?: string;
+  NEXTGEN_PROXY_SECRET?: string;
   ALLOWED_ORIGIN?: string;
 }
 
@@ -25,6 +27,11 @@ interface ChatRequest {
   agentId?: string;
   messages?: ChatMessage[];
   sessionId?: string;
+}
+
+interface SessionRequest {
+  participantId?: string;
+  sessionData?: unknown;
 }
 
 type Mood = "neutral" | "reflective" | "encouraging";
@@ -43,7 +50,7 @@ interface VectorSearchResult {
   content?: Array<{ type?: string; text?: string }>;
 }
 
-const chunks = interviewChunks as RagChunk[];
+const chunks = dreamMentorChunks as RagChunk[];
 const MAX_HISTORY_MESSAGES = 14;
 const MAX_MESSAGE_LENGTH = 2400;
 
@@ -82,7 +89,14 @@ export default {
           ok: true,
           chunks: chunks.length,
           reviewed: chunks.filter((chunk) => chunk.reviewStatus === "verified").length,
-          needsReview: chunks.filter((chunk) => chunk.reviewStatus === "needs_review").length
+          needsReview: chunks.filter((chunk) => chunk.reviewStatus === "needs_review").length,
+          byAgent: Object.fromEntries(
+            Object.keys(AGENTS).map((agentId) => [
+              agentId,
+              chunks.filter((chunk) => chunk.agentIds.includes(agentId)).length
+            ])
+          ),
+          supabaseProxy: hasSupabaseProxy(env)
         },
         env
       );
@@ -90,6 +104,14 @@ export default {
 
     if (url.pathname === "/api/chat" && request.method === "POST") {
       return handleChat(request, env);
+    }
+
+    if (url.pathname === "/api/session/load" && request.method === "POST") {
+      return handleSession(request, env, "load");
+    }
+
+    if (url.pathname === "/api/session/save" && request.method === "POST") {
+      return handleSession(request, env, "save");
     }
 
     return json({ error: "not_found", message: "Unknown endpoint." }, env, 404);
@@ -120,20 +142,20 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     return json({ error: "empty_message", message: "A user message is required." }, env, 400);
   }
 
-  if (!env.OPENAI_API_KEY) {
+  if (!hasOpenAIBackend(env)) {
     return sceneError(
       env,
       "missing_openai_api_key",
-      "OPENAI_API_KEY가 아직 Worker에 연결되지 않았어요. 설정을 확인한 뒤 다시 이야기해 주세요.",
+      "AI 연결 정보가 아직 서버에 설정되지 않았어요. Supabase Secret 설정을 확인해 주세요.",
       503
     );
   }
 
-  if (!env.OPENAI_VECTOR_STORE_ID) {
+  if (!hasVectorBackend(env)) {
     return sceneError(
       env,
       "missing_vector_store",
-      "상담 기록 저장소가 아직 연결되지 않았어요. OPENAI_VECTOR_STORE_ID 설정을 확인해 주세요.",
+      "상담 기록 저장소가 아직 연결되지 않았어요. Supabase의 Vector Store 설정을 확인해 주세요.",
       503
     );
   }
@@ -148,19 +170,14 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const localEvidence = searchLocalEvidence(chunks, latestUserMessage.content, agent.retrievalTags, 8);
+  const agentChunks = chunks.filter((chunk) => chunk.agentIds.includes(agentId));
+  const localEvidence = searchLocalEvidence(agentChunks, latestUserMessage.content, agent.retrievalTags, 8);
   const semanticMatches = await searchVectorStore(latestUserMessage.content, env);
-  const evidence = mergeSemanticEvidence(chunks, localEvidence, semanticMatches, 5);
+  const evidence = mergeSemanticEvidence(agentChunks, localEvidence, semanticMatches, 5);
   const groundingConfidence = estimateGroundingConfidence(evidence);
   const insufficientEvidence = evidence.length < 2 || groundingConfidence === "low";
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
+  const response = await callOpenAI("responses", {
       model: env.OPENAI_MODEL || "gpt-5.5",
       instructions: buildInstructions(agentId, groundingConfidence, evidence),
       input: messages,
@@ -174,8 +191,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
           schema: SCENE_SCHEMA
         }
       }
-    })
-  });
+    }, env);
 
   const openaiPayload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
@@ -254,24 +270,14 @@ async function searchVectorStore(
   query: string,
   env: Env
 ): Promise<Array<{ text: string; score: number }>> {
-  if (!env.OPENAI_API_KEY || !env.OPENAI_VECTOR_STORE_ID) return [];
+  if (!hasVectorBackend(env)) return [];
 
   try {
-    const response = await fetch(
-      `https://api.openai.com/v1/vector_stores/${encodeURIComponent(env.OPENAI_VECTOR_STORE_ID)}/search`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          query,
-          max_num_results: 6,
-          rewrite_query: true
-        })
-      }
-    );
+    const response = await callOpenAI("vector_search", {
+      query,
+      max_num_results: 6,
+      rewrite_query: true
+    }, env);
 
     if (!response.ok) return [];
     const payload = (await response.json()) as { data?: VectorSearchResult[] };
@@ -293,20 +299,13 @@ async function moderateText(
   input: string,
   env: Env
 ): Promise<{ flagged: boolean; categories: Record<string, boolean> } | null> {
-  if (!env.OPENAI_API_KEY) return null;
+  if (!hasOpenAIBackend(env)) return null;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/moderations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: env.OPENAI_MODERATION_MODEL || "omni-moderation-latest",
-        input
-      })
-    });
+    const response = await callOpenAI("moderations", {
+      model: env.OPENAI_MODERATION_MODEL || "omni-moderation-latest",
+      input
+    }, env);
 
     if (!response.ok) return null;
     const payload = (await response.json()) as {
@@ -379,16 +378,21 @@ function buildInstructions(
     "",
     "대화 목표:",
     "- 사용자가 챗봇의 보고서가 아니라 조금 먼저 헤매본 선배와 마주 앉아 있다고 느끼게 한다.",
-    "- 첫 문장은 사용자의 구체적인 상황을 받아주거나 짧은 회고로 시작한다.",
-    "- 답변은 2~4개의 짧은 문단으로 이루어진 하나의 자연스러운 대화문이다.",
+    "- 첫 문장은 사용자의 말에 바로 반응하거나 '나도 그랬어요' 같은 짧은 자기 경험으로 시작한다.",
+    "- 답변은 4~7개의 짧은 문장으로 쓴다. 한 문장에는 한 가지 생각만 담는다.",
+    "- 잘 다듬어진 상담 칼럼보다 실제 사람이 잠시 생각하며 말하는 구어체를 우선한다.",
     "- 목록, 번호, 섹션 제목, 준비물 체크리스트를 사용하지 않는다.",
-    "- 근거가 충분하면 여러 기록의 공통 패턴을 '나도 그 무렵...' 같은 합성된 선배 경험으로 풀 수 있다.",
+    "- 검색된 여러 삶의 공통 경험은 이 선배 자신의 융합된 기억이다. '나도 그 무렵...'처럼 1인칭으로 말한다.",
+    evidence.length > 0
+      ? "- 이번 답변에는 반드시 '나도', '나는', '내가', '내 경험에는' 중 하나를 사용한 1인칭 경험 문장을 한 문장 이상 넣는다."
+      : "- 검색 근거가 없으므로 경험을 지어내지 말고, 사람답게 반응한 뒤 사용자의 상황을 더 묻는다.",
     "- 특정 실존 인물의 고유 사건을 자신의 실제 경험이라고 주장하지 않는다.",
-    "- confidence가 low인 근거는 경험담, 수치, 직접 인용에 사용하지 않는다.",
-    "- reviewStatus가 needs_review인 자료는 따옴표 인용하거나 자신의 과거 경험처럼 말하지 않고, '기록 속 사람들은...'처럼 일반화된 패턴으로만 사용한다.",
+    "- confidence가 low인 근거는 구체적인 사건, 수치, 고유명사, 직접 인용에 사용하지 않는다.",
+    "- reviewStatus가 needs_review인 자료도 공통된 감정·고민·선택 방식은 자신의 경험으로 말할 수 있지만, 구체적 사실이나 인용으로 확대하지 않는다.",
     verifiedEvidenceCount === 0
-      ? "- 검증 완료 근거가 없으므로 '나도', '나는 그때', '내 경험에는' 같은 직접 체험형 회고를 절대 사용하지 않는다."
-      : "- 합성된 1인칭 회고는 검증 완료 근거에 공통으로 존재하는 패턴 안에서만 사용한다.",
+      ? "- 검증 완료 근거가 없으므로 구체적인 인물·시기·장소·수치 없이, 검색 근거에 공통된 경험의 결만 1인칭으로 말한다."
+      : "- 구체적인 회고는 검증 완료 근거에 실제로 존재하는 범위 안에서만 말한다.",
+    "- 대화 본문에서 '기록 속', '자료에 따르면', '데이터를 보면', '내가 살펴본 기록'이라는 말을 절대 사용하지 않는다.",
     "- 근거가 부족하면 일반론을 꾸미지 말고 사용자의 상황을 좁히는 질문을 중심에 둔다.",
     "- 마지막 문장을 질문형으로 끝내지 않아도 된다. 후속 대화는 choices에 둔다.",
     "",
@@ -454,16 +458,13 @@ export function neutralizeUnverifiedExperience(
   text: string,
   evidence: RetrievedEvidence[]
 ): string {
-  const hasVerifiedEvidence = evidence.some(
-    ({ chunk }) => chunk.reviewStatus === "verified" && chunk.confidence !== "low"
-  );
-  if (hasVerifiedEvidence) return text;
+  if (evidence.length > 0) return text;
 
   return text
-    .replace(/나도\s*/g, "내가 살펴본 기록 속 사람들도 ")
-    .replace(/나 역시\s*/g, "기록 속 사람들 역시 ")
-    .replace(/나는 그때\s*/g, "기록 속 사람들은 그때 ")
-    .replace(/내 경험(?:에는|에선|에서는)?/g, "내가 살펴본 기록에서는");
+    .replace(/나도\s*/g, "그 마음은 ")
+    .replace(/나 역시\s*/g, "그럴 때는 ")
+    .replace(/나는 그때\s*/g, "그런 순간에는 ")
+    .replace(/내 경험(?:에는|에선|에서는)?/g, "이럴 때는");
 }
 
 export function sanitizeChoices(value: unknown): string[] {
@@ -589,6 +590,111 @@ function sceneError(
     env,
     status
   );
+}
+
+function hasSupabaseProxy(env: Env): boolean {
+  return Boolean(env.SUPABASE_FUNCTIONS_URL?.trim() && env.NEXTGEN_PROXY_SECRET?.trim());
+}
+
+function hasOpenAIBackend(env: Env): boolean {
+  return hasSupabaseProxy(env) || Boolean(env.OPENAI_API_KEY?.trim());
+}
+
+function hasVectorBackend(env: Env): boolean {
+  return hasSupabaseProxy(env) || Boolean(env.OPENAI_API_KEY?.trim() && env.OPENAI_VECTOR_STORE_ID?.trim());
+}
+
+async function handleSession(
+  request: Request,
+  env: Env,
+  action: "load" | "save"
+): Promise<Response> {
+  let body: SessionRequest;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad_request", message: "Request body must be JSON." }, env, 400);
+  }
+
+  if (typeof body.participantId !== "string" || body.participantId.trim().length === 0) {
+    return json({ error: "invalid_participant_id", message: "참여 ID를 확인해 주세요." }, env, 400);
+  }
+
+  if (!hasSupabaseProxy(env)) {
+    return json(
+      action === "load"
+        ? { found: false, sessionData: { version: 1, sessions: {} }, cloud: false }
+        : { ok: true, cloud: false },
+      env
+    );
+  }
+
+  try {
+    const response = await invokeSupabaseFunction("session-api", {
+      action,
+      participantId: body.participantId,
+      ...(action === "save" ? { sessionData: body.sessionData } : {})
+    }, env);
+    const payload = await response.text();
+    return new Response(payload, {
+      status: response.status,
+      headers: {
+        ...corsHeaders(env),
+        "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8"
+      }
+    });
+  } catch {
+    return json(
+      { error: "session_service_unavailable", message: "세션 저장소에 연결하지 못했어요." },
+      env,
+      503
+    );
+  }
+}
+
+async function callOpenAI(
+  operation: "moderations" | "vector_search" | "responses",
+  payload: unknown,
+  env: Env
+): Promise<Response> {
+  if (hasSupabaseProxy(env)) {
+    return invokeSupabaseFunction("openai-proxy", { operation, payload }, env);
+  }
+
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+
+  const endpoint = operation === "vector_search"
+    ? `https://api.openai.com/v1/vector_stores/${env.OPENAI_VECTOR_STORE_ID}/search`
+    : `https://api.openai.com/v1/${operation}`;
+
+  return fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function invokeSupabaseFunction(
+  functionName: "session-api" | "openai-proxy",
+  payload: unknown,
+  env: Env
+): Promise<Response> {
+  const baseUrl = env.SUPABASE_FUNCTIONS_URL?.trim().replace(/\/$/, "");
+  const proxySecret = env.NEXTGEN_PROXY_SECRET?.trim();
+  if (!baseUrl || !proxySecret) throw new Error("Supabase proxy is not configured.");
+
+  return fetch(`${baseUrl}/${functionName}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-nextgen-proxy-secret": proxySecret
+    },
+    body: JSON.stringify(payload)
+  });
 }
 
 function json(value: unknown, env: Env, status = 200): Response {

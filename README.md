@@ -2,23 +2,24 @@
 
 사용자 노출명은 **AI 선배와의 만남**입니다. 실존 인물의 인터뷰와 기록에서 검수된 경험 패턴을 찾아, 특정 인물을 사칭하지 않는 새로운 AI 선배의 대화로 재구성하는 교육·상담 프로젝트입니다.
 
-MVP에서는 네 명의 선배 중 `길을 찾는 사람`만 활성화합니다.
+현재 버전에서는 네 명의 선배가 모두 독립된 데이터 컬렉션과 대화 세션으로 활성화되어 있습니다.
 
 | 선배 | 질문 | 상태 |
 | --- | --- | --- |
-| 길을 찾는 사람 | 나는 무엇을 선택해야 할까? | MVP |
-| 창작하는 사람 | 계속 창작할 수 있을까? | 준비 중 |
-| 생각하는 사람 | 어떻게 살아야 할까? | 준비 중 |
-| 연결하는 사람 | 사람과 기술은 어떻게 연결되는가? | 준비 중 |
+| 길을 찾는 사람 | 나는 무엇을 선택해야 할까? | 활성화 |
+| 창작하는 사람 | 계속 창작할 수 있을까? | 활성화 |
+| 생각하는 사람 | 어떻게 살아야 할까? | 활성화 |
+| 연결하는 사람 | 사람과 기술은 어떻게 연결되는가? | 활성화 |
 
 ## 사용자 경험
 
 - 4명의 AI 선배를 만나는 선택 허브
 - 교육 공간을 배경으로 한 비주얼 노벨형 1:1 대화
-- 타자 효과와 클릭 즉시 표시
+- 답변을 문장 단위로 차례로 보여주고 클릭하면 즉시 전체 표시
 - 모델이 생성하는 자연스러운 후속 선택지 3개와 자유 입력
 - `Enter` 전송, `Shift+Enter` 줄바꿈, 한글 조합 중 전송 방지
 - 브라우저 세션 저장, 대화 불러오기, 초기화, 실패한 질문 재시도
+- 로컬 기록 우선 복구와 참여 ID 기반 Supabase 기기 간 동기화
 - 출처를 상시 노출하지 않고 `이 답변의 바탕` 서랍에서 확인
 
 ## Architecture
@@ -28,26 +29,32 @@ apps/web                 React + Vite + Framer Motion
   └─ Cloudflare Static Assets
           │ /api/*
 apps/worker              Cloudflare Worker
+  ├─ same-origin API와 비밀 프록시
   ├─ input moderation
   ├─ local keyword search
   ├─ OpenAI Vector Store search
   ├─ Responses API structured output
   ├─ evidence ID validation
   └─ output moderation
+          │ shared proxy secret
+supabase
+  ├─ session-api         참여 ID 해시 기반 세션 저장
+  ├─ openai-proxy        OpenAI API key와 Vector Store ID 보관
+  └─ Postgres            private participant_sessions
 
 packages/agents          4개 선배 설정과 공통 상담 정책
 packages/rag             정규화 스키마, 로컬 검색, 검색 결과 병합
 data/processed           PDF에서 추출한 검수용 JSON
-DB                       원본 자료
+DB/꿈다락 AI 데이터베이스.pdf  4개 역할, 20명, 141페이지 원본 자료
 Storygator               참고 자료이며 빌드에는 포함되지 않음
 ```
 
-프로덕션은 Worker Static Assets를 사용해 웹 앱과 API를 한 도메인에서 제공합니다. 브라우저 번들에는 OpenAI 키나 Vector Store ID가 포함되지 않습니다.
+프로덕션은 Worker Static Assets를 사용해 웹 앱과 API를 한 도메인에서 제공합니다. 브라우저 번들 및 Cloudflare Worker에는 OpenAI 키나 Vector Store ID를 두지 않고 Supabase Secret으로 관리합니다.
 
 ## Storygator에서 가져온 것
 
 - 한 장면씩 이어지는 인터랙티브 대화 구성
-- 타자 효과, 후속 대화 선택지, 자연어 자유 입력
+- 문장별 대화 호흡, 후속 대화 선택지, 자연어 자유 입력
 - 구조화 응답과 파싱 실패 시 대체 장면
 - 세션 복구와 절제된 화면 전환
 - `framer-motion`, `lucide-react` 기반 UI
@@ -61,16 +68,17 @@ Node.js 20 이상과 Python 3이 필요합니다.
 ```powershell
 npm install
 npm run process:interview-db
+npm run upload:vector-store
 ```
 
 `apps/worker/.dev.vars.example`을 참고해 `apps/worker/.dev.vars`를 만듭니다.
 
 ```env
-OPENAI_API_KEY=sk-...
-OPENAI_VECTOR_STORE_ID=vs_...
 OPENAI_MODEL=gpt-5.5
 OPENAI_MODERATION_MODEL=omni-moderation-latest
 ALLOWED_ORIGIN=http://localhost:5173
+SUPABASE_FUNCTIONS_URL=https://wfyghzowxusawsztprqh.supabase.co/functions/v1
+NEXTGEN_PROXY_SECRET=<Supabase와 Cloudflare에 등록한 동일한 값>
 ```
 
 두 터미널에서 실행합니다.
@@ -90,15 +98,26 @@ npm run dev:web
 
 1. 원본 PDF를 `DB/`에 보관합니다.
 2. `npm run process:interview-db`로 정규화 청크를 생성합니다.
-3. `data/processed/interview-db1.chunks.json`의 인물, 페이지, 태그와 내용을 검수합니다.
+3. `data/processed/dream-mentor.chunks.json`의 인물, 에이전트, 페이지, 태그와 내용을 검수합니다.
 4. 각 청크의 `reviewStatus`를 지정합니다.
    - `verified`: 원 출처까지 확인되어 답변 근거로 사용 가능
    - `needs_review`: 검색에는 쓰되 직접 인용이나 확정적 경험담에는 사용하지 않음
    - `excluded`: 검색과 프롬프트에서 완전히 제외
-5. 검수한 자료를 OpenAI Vector Store에 업로드합니다.
+5. `npm run upload:vector-store`로 현재 PDF를 OpenAI Vector Store에 업로드합니다. 같은 해시의 파일은 건너뛰고, 같은 이름의 이전 첨부는 새 인덱싱 성공 후 교체합니다.
 6. 대표 질문으로 검색 결과, `evidenceIds`, 최종 citation을 확인합니다.
 
 `direct_quote` 표기만으로 원문이 검증된 것으로 간주하지 않습니다. `sourceTitle`, `sourceUrl`, `verifiedAt`까지 확인해야 `verified`로 승격합니다.
+
+현재 자동 추출 결과는 총 194개 청크입니다.
+
+| agentId | 인물 | 청크 |
+| --- | ---: | ---: |
+| `pathfinder` | 5명 | 40 |
+| `creator` | 5명 | 69 |
+| `thinker` | 5명 | 41 |
+| `connector` | 5명 | 44 |
+
+Worker는 로컬 검색 전에 `agentIds`를 필터링하고, Vector Store 결과도 해당 역할의 로컬 청크와 일치할 때만 병합합니다. 따라서 다른 현자의 인물이 citation에 섞이지 않습니다.
 
 ## API Contract
 
@@ -135,20 +154,24 @@ npm run test:e2e
 
 ## Deploy
 
-Cloudflare 로그인 후 Worker secret을 설정합니다.
+현재 공개 서비스: [https://nextgenagent-worker.jsindustriests.workers.dev](https://nextgenagent-worker.jsindustriests.workers.dev)
+
+연결된 Supabase 프로젝트는 `NextGenAgent` (`wfyghzowxusawsztprqh`, 서울 리전)입니다.
+
+Supabase 프로젝트를 CLI로 연결하고 DB와 Edge Function을 먼저 배포합니다.
 
 ```powershell
-cd apps/worker
-npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put OPENAI_VECTOR_STORE_ID
-cd ../..
-npm run deploy
+npx supabase link --project-ref <PROJECT_REF>
+npx supabase db push
+npx supabase secrets set --env-file supabase/.env
+npx supabase functions deploy session-api
+npx supabase functions deploy openai-proxy
 ```
 
-`OPENAI_MODEL`, `OPENAI_MODERATION_MODEL`, `ALLOWED_ORIGIN`은 Cloudflare 환경 변수로 설정할 수 있습니다. 별도 프론트 도메인에서 Worker를 호출할 때는 `ALLOWED_ORIGIN`을 그 배포 도메인으로 제한합니다.
+Cloudflare Worker에는 Supabase Function URL과 양쪽이 공유하는 프록시 Secret만 설정한 뒤 `npm run deploy`를 실행합니다. 자세한 시연·배포·장애 대응 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)에 정리되어 있습니다.
 
 GitHub Pages는 정적 프론트 대안으로만 지원합니다. 이 경우 `VITE_WORKER_URL`을 공개 Worker 주소로 지정하고, Worker의 `ALLOWED_ORIGIN`에 GitHub Pages Origin을 설정해야 합니다.
 
 ## Visual Assets
 
-`apps/web/public/assets`의 배경과 초상화는 특정 실존 인물을 복제하지 않는 독자적 캐릭터입니다. 현재는 정적 자산으로 배포되며, 실시간 대화 중에는 이미지 모델을 호출하지 않습니다.
+`apps/web/public/assets`의 네 현자는 얼굴·연령·인종을 특정하지 않는 익명 실루엣 일러스트입니다. 역할별로 길, 창작 매체, 사유의 원, 사람과 도구의 연결을 상징하는 형태와 보조색만 다르게 사용합니다. 현재는 정적 자산으로 배포되며 실시간 대화 중에는 이미지 모델을 호출하지 않습니다.

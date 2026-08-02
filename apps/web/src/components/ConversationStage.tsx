@@ -44,7 +44,7 @@ export function ConversationStage({
 }: ConversationStageProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [displayedText, setDisplayedText] = useState("");
+  const [revealedSentenceCount, setRevealedSentenceCount] = useState(0);
   const [typingDone, setTypingDone] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -59,20 +59,24 @@ export function ConversationStage({
 
   useEffect(() => {
     const text = latestAssistant?.content || "";
-    setDisplayedText("");
+    const sentences = splitIntoSpokenSentences(text);
+    setRevealedSentenceCount(sentences.length > 0 ? 1 : 0);
     setTypingDone(false);
-    if (!text) return;
+    if (sentences.length === 0) return;
+    if (sentences.length === 1) {
+      setTypingDone(true);
+      return;
+    }
 
-    let index = 0;
-    const step = Math.max(1, Math.ceil(text.length / 110));
+    let count = 1;
     const timer = window.setInterval(() => {
-      index = Math.min(text.length, index + step);
-      setDisplayedText(text.slice(0, index));
-      if (index >= text.length) {
+      count += 1;
+      setRevealedSentenceCount(Math.min(count, sentences.length));
+      if (count >= sentences.length) {
         window.clearInterval(timer);
         setTypingDone(true);
       }
-    }, 22);
+    }, 780);
 
     return () => window.clearInterval(timer);
   }, [latestAssistant?.id]);
@@ -83,13 +87,14 @@ export function ConversationStage({
 
   const completeTyping = () => {
     if (!latestAssistant || typingDone) return;
-    setDisplayedText(latestAssistant.content);
+    setRevealedSentenceCount(splitIntoSpokenSentences(latestAssistant.content).length);
     setTypingDone(true);
   };
 
   const choices = latestAssistant?.scene?.choices || [];
   const citations = latestAssistant?.citations || [];
   const mood = latestAssistant?.scene?.portraitVariant || "neutral";
+  const spokenSentences = splitIntoSpokenSentences(latestAssistant?.content || "");
 
   return (
     <main className={`conversation-shell mood-${mood}`}>
@@ -130,7 +135,7 @@ export function ConversationStage({
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.38 }}
         >
-          <img src={portrait} alt={`${agent.title}의 초상`} />
+          <img src={portrait} alt={`${agent.title}의 실루엣`} />
         </motion.div>
 
         <div className="scene-context">
@@ -158,14 +163,25 @@ export function ConversationStage({
             {isLoading ? (
               <p className="thinking-line">
                 <LoaderCircle size={18} />
-                기록 속에서 닮은 순간을 찾고 있어요.
+                잠시 생각을 고르고 있어요.
               </p>
             ) : (
-              <p>{displayedText}</p>
+              <div className="spoken-lines" aria-live="polite">
+                {spokenSentences.slice(0, revealedSentenceCount).map((sentence, index) => (
+                  <motion.p
+                    key={`${latestAssistant?.id || "opening"}-${index}`}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {sentence}
+                  </motion.p>
+                ))}
+              </div>
             )}
             {!typingDone && !isLoading && <span className="typing-hint">눌러서 한 번에 보기</span>}
             {latestAssistant?.insufficientEvidence && !isLoading && (
-              <p className="evidence-caution">이번 이야기는 직접 맞닿는 기록이 적어, 단정하지 않고 함께 묻는 쪽에 가깝습니다.</p>
+              <p className="evidence-caution">내 경험만으로 단정하기 어려운 이야기라, 조금 더 조심스럽게 답했어요.</p>
             )}
           </motion.div>
         </AnimatePresence>
@@ -275,3 +291,11 @@ function moodLabel(mood: string): string {
   return "이야기를 듣는 중";
 }
 
+export function splitIntoSpokenSentences(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  return (normalized.match(/[^.!?。！？\n]+[.!?。！？]?|\n+/g) || [normalized])
+    .map((part) => part.trim())
+    .filter(Boolean);
+}

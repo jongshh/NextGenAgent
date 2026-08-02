@@ -49,13 +49,13 @@ test("duplicate or malformed choices fall back to a safe set", () => {
   assert.equal(new Set(choices).size, 3);
 });
 
-test("unreviewed sources are not presented as the mentor's direct experience", () => {
+test("retrieved life patterns can be spoken as the composite mentor's experience", () => {
   const guarded = neutralizeUnverifiedExperience(
     "나도 그 무렵 작은 실험부터 시작했어요. 내 경험에서는 서두르지 않는 게 중요했죠.",
     evidence
   );
 
-  assert.equal(guarded.includes("나도"), false);
-  assert.equal(guarded.includes("내 경험"), false);
-  assert.match(guarded, /기록/);
+  assert.equal(guarded.includes("나도"), true);
+  assert.equal(guarded.includes("내 경험"), true);
+  assert.equal(guarded.includes("기록"), false);
 });

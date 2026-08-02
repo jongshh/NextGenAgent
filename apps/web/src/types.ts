@@ -62,3 +62,8 @@ export interface ConversationSession {
   updatedAt: number;
 }
 
+export interface SessionData {
+  version: 1;
+  sessions: Partial<Record<AgentId, ConversationSession>>;
+  lastAgentId?: AgentId;
+}

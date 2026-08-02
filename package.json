@@ -16,7 +16,9 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "node tests/ui-smoke.mjs",
     "deploy": "npm run build && npm --workspace @nextgen/worker run deploy",
-    "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py DB/Interview_DB1.pdf data/processed/interview-db1.chunks.json"
+    "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py \"DB/꿈다락 AI 데이터베이스.pdf\" data/processed/dream-mentor.chunks.json",
+    "process:legacy-db": "python packages/rag/scripts/process_interview_pdf.py DB/Interview_DB1.pdf data/processed/interview-db1.chunks.json",
+    "upload:vector-store": "node packages/rag/scripts/upload_vector_store.mjs \"DB/꿈다락 AI 데이터베이스.pdf\""
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

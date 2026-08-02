@@ -3,7 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-07-13"
 
 [vars]
-ALLOWED_ORIGIN = "http://localhost:5173"
+ALLOWED_ORIGIN = "https://nextgenagent-worker.jsindustriests.workers.dev"
+SUPABASE_FUNCTIONS_URL = "https://wfyghzowxusawsztprqh.supabase.co/functions/v1"
 
 [assets]
 directory = "../web/dist"

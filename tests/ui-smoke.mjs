@@ -4,6 +4,7 @@ import path from "node:path";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 const outputDir = path.resolve("artifacts/screenshots");
+const runId = Date.now().toString(36);
 await mkdir(outputDir, { recursive: true });
 
 const browser = await chromium.launch({ channel: "msedge", headless: true });
@@ -16,7 +17,18 @@ try {
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.screenshot({ path: path.join(outputDir, "session-gate-desktop.png"), fullPage: true });
+  await page.getByRole("textbox", { name: "참여 ID", exact: true }).fill(`desktop-${runId}`);
+  await page.getByRole("button", { name: "참여 ID로 계속", exact: true }).click();
+  await page.getByTestId("mentor-pathfinder").waitFor({ state: "visible" });
   await page.screenshot({ path: path.join(outputDir, "hub-desktop.png"), fullPage: true });
+
+  const mentorIds = ["pathfinder", "creator", "thinker", "connector"];
+  const activeMentors = [];
+  for (const mentorId of mentorIds) {
+    const cardButton = page.getByTestId(`mentor-${mentorId}`);
+    activeMentors.push({ mentorId, enabled: await cardButton.isEnabled() });
+  }
 
   await page.getByTestId("mentor-pathfinder").click();
   await page.getByTestId("dialogue-box").click();
@@ -63,6 +75,7 @@ try {
     shiftEnterWorks,
     sourceDrawerVisible,
     sessionRestored,
+    activeMentors,
     pageErrors
   };
   await desktop.close();
@@ -70,6 +83,9 @@ try {
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobilePage = await mobile.newPage();
   await mobilePage.goto(baseUrl, { waitUntil: "networkidle" });
+  await mobilePage.getByRole("textbox", { name: "참여 ID", exact: true }).fill(`mobile-${runId}`);
+  await mobilePage.getByRole("button", { name: "참여 ID로 계속", exact: true }).click();
+  await mobilePage.getByTestId("mentor-pathfinder").waitFor({ state: "visible" });
   await mobilePage.getByTestId("mentor-pathfinder").click();
   await mobilePage.getByTestId("dialogue-box").click();
   await mobilePage.locator(".mentor-portrait").waitFor({ state: "visible" });
@@ -109,6 +125,7 @@ try {
     results.desktop.shiftEnterWorks &&
     results.desktop.sourceDrawerVisible &&
     results.desktop.sessionRestored &&
+    results.desktop.activeMentors.every((mentor) => mentor.enabled) &&
     results.desktop.pageErrors.length === 0 &&
     results.mobile.viewportChecks.every((check) => check.visible);
 

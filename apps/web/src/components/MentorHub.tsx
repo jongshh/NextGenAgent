@@ -1,6 +1,6 @@
 import { AGENTS, type AgentId } from "@nextgen/agents";
 import { motion } from "framer-motion";
-import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 
 interface MentorVisual {
   image: string;
@@ -11,11 +11,11 @@ interface MentorVisual {
 
 interface MentorHubProps {
   visuals: Record<AgentId, MentorVisual>;
-  hasSavedSession: boolean;
+  savedSessions: Partial<Record<AgentId, boolean>>;
   onSelect: (agentId: AgentId) => void;
 }
 
-export function MentorHub({ visuals, hasSavedSession, onSelect }: MentorHubProps) {
+export function MentorHub({ visuals, savedSessions, onSelect }: MentorHubProps) {
   return (
     <main className="hub-shell">
       <div className="hub-topbar">
@@ -56,12 +56,7 @@ export function MentorHub({ visuals, hasSavedSession, onSelect }: MentorHubProps
               <div className="mentor-card-scrim" />
               <div className="mentor-card-status">
                 <span>{visual.number}</span>
-                {!agent.active && (
-                  <span className="coming-soon">
-                    <LockKeyhole size={12} />
-                    준비 중
-                  </span>
-                )}
+                <span className="mentor-available">대화 가능</span>
               </div>
               <div className="mentor-card-copy">
                 <p>{visual.promise}</p>
@@ -74,7 +69,7 @@ export function MentorHub({ visuals, hasSavedSession, onSelect }: MentorHubProps
                   data-testid={`mentor-${agent.id}`}
                   style={{ "--mentor-accent": visual.accent } as React.CSSProperties}
                 >
-                  {agent.active ? (hasSavedSession ? "대화 이어가기" : "대화 시작") : "곧 만나요"}
+                  {savedSessions[agent.id] ? "대화 이어가기" : "대화 시작"}
                   {agent.active && <ArrowRight size={18} />}
                 </button>
               </div>
@@ -85,4 +80,3 @@ export function MentorHub({ visuals, hasSavedSession, onSelect }: MentorHubProps
     </main>
   );
 }
-
