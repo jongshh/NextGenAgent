@@ -5,13 +5,14 @@ import {
   ArrowLeft,
   BookOpenText,
   History,
-  LoaderCircle,
   RefreshCw,
   RotateCcw,
   Send
 } from "lucide-react";
 import type { ConversationSession, ConversationTurn } from "../types";
+import { splitIntoSpokenSentences } from "../text";
 import { SideDrawer } from "./SideDrawer";
+import { ThinkingDots } from "./ThinkingDots";
 
 interface ConversationStageProps {
   agent: AgentConfig;
@@ -162,8 +163,7 @@ export function ConversationStage({
             </div>
             {isLoading ? (
               <p className="thinking-line">
-                <LoaderCircle size={18} />
-                잠시 생각을 고르고 있어요.
+                <ThinkingDots />
               </p>
             ) : (
               <div className="spoken-lines" aria-live="polite">
@@ -289,13 +289,4 @@ function moodLabel(mood: string): string {
   if (mood === "encouraging") return "용기를 건네는 중";
   if (mood === "reflective") return "함께 생각하는 중";
   return "이야기를 듣는 중";
-}
-
-export function splitIntoSpokenSentences(text: string): string[] {
-  const normalized = text.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
-
-  return (normalized.match(/[^.!?。！？\n]+[.!?。！？]?|\n+/g) || [normalized])
-    .map((part) => part.trim())
-    .filter(Boolean);
 }

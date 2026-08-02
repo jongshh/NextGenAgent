@@ -1,6 +1,13 @@
 import type { AgentId } from "@nextgen/agents";
 
 export type Mood = "neutral" | "reflective" | "encouraging";
+export type ConversationUiVariant = "A" | "B";
+
+export interface ChatAvatarProps {
+  role: "user" | "assistant";
+  imageUrl?: string;
+  label: string;
+}
 
 export interface Choice {
   id: string;

@@ -1,9 +1,10 @@
 import type { AgentId } from "@nextgen/agents";
-import type { ConversationSession, SessionData } from "./types";
+import type { ConversationSession, ConversationUiVariant, SessionData } from "./types";
 
 const STORAGE_KEY = "nextgenagent:sessions:v1";
 const LAST_AGENT_KEY = "nextgenagent:last-agent:v1";
 const PARTICIPANT_ID_KEY = "nextgenagent:participant-id:v1";
+const CONVERSATION_UI_KEY = "nextgenagent:conversation-ui:v1";
 
 type SessionMap = Partial<Record<AgentId, ConversationSession>>;
 
@@ -104,6 +105,22 @@ export function saveParticipantId(participantId: string): void {
     localStorage.setItem(PARTICIPANT_ID_KEY, participantId.trim());
   } catch {
     // Cloud recovery remains optional when local storage is unavailable.
+  }
+}
+
+export function loadConversationUiVariant(): ConversationUiVariant {
+  try {
+    return localStorage.getItem(CONVERSATION_UI_KEY) === "B" ? "B" : "A";
+  } catch {
+    return "A";
+  }
+}
+
+export function saveConversationUiVariant(variant: ConversationUiVariant): void {
+  try {
+    localStorage.setItem(CONVERSATION_UI_KEY, variant);
+  } catch {
+    // The current in-memory selection still works when storage is unavailable.
   }
 }
 

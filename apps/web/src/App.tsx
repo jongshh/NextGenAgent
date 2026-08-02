@@ -2,20 +2,30 @@ import { useEffect, useState } from "react";
 import { AGENTS, type AgentId } from "@nextgen/agents";
 import { MentorHub } from "./components/MentorHub";
 import { ConversationStage } from "./components/ConversationStage";
+import { ConversationStageB } from "./components/ConversationStageB";
 import { SessionGate } from "./components/SessionGate";
 import {
   hasLocalSessions,
   loadAllSessions,
+  loadConversationUiVariant,
   loadLastAgent,
   loadParticipantId,
   loadSession,
   removeSession,
   replaceAllSessions,
   saveLastAgent,
+  saveConversationUiVariant,
   saveParticipantId,
   saveSession
 } from "./storage";
-import type { ChatResponse, ChatScene, ConversationSession, ConversationTurn, SessionData } from "./types";
+import type {
+  ChatResponse,
+  ChatScene,
+  ConversationSession,
+  ConversationTurn,
+  ConversationUiVariant,
+  SessionData
+} from "./types";
 
 const workerUrl = import.meta.env.VITE_WORKER_URL || (import.meta.env.DEV ? "http://localhost:8787" : "");
 
@@ -52,6 +62,9 @@ const MENTOR_VISUALS: Record<
 export default function App() {
   const [accessReady, setAccessReady] = useState(() => hasLocalSessions());
   const [participantId, setParticipantId] = useState<string | null>(() => loadParticipantId());
+  const [conversationUi, setConversationUi] = useState<ConversationUiVariant>(() =>
+    loadConversationUiVariant()
+  );
   const [sessionLookupLoading, setSessionLookupLoading] = useState(false);
   const [sessionLookupError, setSessionLookupError] = useState<string | null>(null);
   const [agentId, setAgentId] = useState<AgentId>(() => loadLastAgent() || "pathfinder");
@@ -123,6 +136,11 @@ export default function App() {
     setRetryText(null);
     setView("conversation");
     if (participantId) void saveCloudSnapshot(participantId);
+  }
+
+  function changeConversationUi(variant: ConversationUiVariant) {
+    setConversationUi(variant);
+    saveConversationUiVariant(variant);
   }
 
   async function sendMessage(text: string, appendUser = true) {
@@ -216,7 +234,28 @@ export default function App() {
       <MentorHub
         visuals={MENTOR_VISUALS}
         savedSessions={savedSessions}
+        conversationUi={conversationUi}
+        onConversationUiChange={changeConversationUi}
         onSelect={enterConversation}
+      />
+    );
+  }
+
+  if (conversationUi === "B") {
+    return (
+      <ConversationStageB
+        agent={agent}
+        portrait={MENTOR_VISUALS[agentId].image}
+        session={session}
+        input={input}
+        isLoading={isLoading}
+        errorMessage={errorMessage}
+        retryText={retryText}
+        onInputChange={setInput}
+        onSend={(text) => void sendMessage(text)}
+        onRetry={() => retryText && void sendMessage(retryText, false)}
+        onReset={resetConversation}
+        onBack={() => setView("hub")}
       />
     );
   }
