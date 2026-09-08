@@ -46,6 +46,7 @@ supabase
 
 packages/agents          4개 선배 설정과 공통 상담 정책
 packages/rag             정규화 스키마, 로컬 검색, 검색 결과 병합
+apps/hue-companion       현장 PC 전용 Hue Bridge 제어 및 웹/API 프록시
 data/processed           PDF에서 추출한 검수용 JSON
 DB/꿈다락 AI 데이터베이스.pdf  4개 역할, 20명, 141페이지 원본 자료
 Storygator               참고 자료이며 빌드에는 포함되지 않음
@@ -93,6 +94,10 @@ npm run dev:web
 - Web: `http://localhost:5173`
 - Worker API: `http://localhost:8787`
 - Health check: `http://localhost:8787/api/health`
+
+Philips Hue를 사용하는 현장 시연은 Windows에서 `setup-hue.bat`를 더블클릭하면 자동 설치 마법사로 설정할 수 있습니다. 수동 설정은 Bridge와 같은 네트워크에서 최초 한 번 `npm run hue:setup`을 실행한 뒤 `npm run demo:hue`로 시작합니다. 네 명의 선배에 서로 다른 컬러 전구를 지정하며, 응답 효과가 끝나면 전구는 직전 상태로 복원됩니다. 자세한 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)을 참고합니다.
+
+Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 더블클릭합니다. 일반 웹 모드는 Hue 장비 없이 Worker와 Vite 웹을 실행하고, Hue 포함 모드는 로컬 Worker와 Companion을 연결해 최신 코드로 실제 조명까지 테스트합니다.
 
 웹은 기본적으로 `http://localhost:8787`의 Worker를 사용합니다. 다른 주소가 필요하면 빌드 전에 `VITE_WORKER_URL`을 설정합니다.
 

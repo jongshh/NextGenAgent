@@ -37,10 +37,22 @@ interface SessionRequest {
 type Mood = "neutral" | "reflective" | "encouraging";
 type SafetyStatus = "allowed" | "redirected" | "blocked";
 
+export type EmotionTag = "sad" | "anxious" | "confused" | "calm" | "hopeful" | "happy" | "neutral";
+export type IntentTag = "empathize" | "encourage" | "celebrate" | "reflect" | "guide" | "ground";
+export type LightIntensity = "low" | "gentle" | "standard";
+
+export interface LightCue {
+  preset: `${EmotionTag}-${IntentTag}`;
+  durationMs: number;
+  intensity: LightIntensity;
+}
+
 interface ModelScene {
   text: string;
   mood: Mood;
   portraitVariant: Mood;
+  emotionTag: EmotionTag;
+  intentTag: IntentTag;
   choices: string[];
   evidenceIds: string[];
 }
@@ -61,6 +73,14 @@ const SCENE_SCHEMA = {
     text: { type: "string" },
     mood: { type: "string", enum: ["neutral", "reflective", "encouraging"] },
     portraitVariant: { type: "string", enum: ["neutral", "reflective", "encouraging"] },
+    emotionTag: {
+      type: "string",
+      enum: ["sad", "anxious", "confused", "calm", "hopeful", "happy", "neutral"]
+    },
+    intentTag: {
+      type: "string",
+      enum: ["empathize", "encourage", "celebrate", "reflect", "guide", "ground"]
+    },
     choices: {
       type: "array",
       minItems: 3,
@@ -73,7 +93,7 @@ const SCENE_SCHEMA = {
       items: { type: "string" }
     }
   },
-  required: ["text", "mood", "portraitVariant", "choices", "evidenceIds"]
+  required: ["text", "mood", "portraitVariant", "emotionTag", "intentTag", "choices", "evidenceIds"]
 } as const;
 
 export default {
@@ -195,6 +215,11 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
 
   const openaiPayload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
+    console.error(JSON.stringify({
+      message: "OpenAI Responses request failed",
+      status: response.status,
+      upstreamError: readUpstreamError(openaiPayload)
+    }));
     return sceneError(
       env,
       "openai_error",
@@ -228,6 +253,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     .map((id) => evidence.find((item) => item.chunk.id === id))
     .filter((item): item is RetrievedEvidence => Boolean(item));
   const citations = formatCitations(usedEvidence.length > 0 ? usedEvidence : evidence.slice(0, 2));
+  const lightCue = buildLightCue(scene.text, scene.emotionTag, scene.intentTag);
 
   return json(
     {
@@ -239,6 +265,10 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
         text: scene.text,
         mood: scene.mood,
         portraitVariant: scene.portraitVariant,
+        emotionTag: scene.emotionTag,
+        intentTag: scene.intentTag,
+        emotionTags: [scene.emotionTag, scene.intentTag],
+        lightCue,
         choices: scene.choices.map((label, index) => ({
           id: `choice-${index + 1}`,
           label
@@ -339,6 +369,10 @@ function buildSafetyResponse(status: SafetyStatus, isSelfHarm: boolean) {
       text,
       mood: "reflective" as const,
       portraitVariant: "reflective" as const,
+      emotionTag: isSelfHarm ? "calm" as const : "neutral" as const,
+      intentTag: isSelfHarm ? "ground" as const : "reflect" as const,
+      emotionTags: isSelfHarm ? ["calm", "ground"] as const : ["neutral", "reflect"] as const,
+      lightCue: isSelfHarm ? buildLightCue(text, "calm", "ground", "low") : null,
       choices: isSelfHarm
         ? [
             { id: "choice-1", label: "지금 연락할 수 있는 사람을 떠올려볼게요." },
@@ -396,6 +430,12 @@ function buildInstructions(
     "- 근거가 부족하면 일반론을 꾸미지 말고 사용자의 상황을 좁히는 질문을 중심에 둔다.",
     "- 마지막 문장을 질문형으로 끝내지 않아도 된다. 후속 대화는 choices에 둔다.",
     "",
+    "감정 태그 규칙:",
+    "- emotionTag는 응답이 공감하고 있는 사용자의 주된 정서 하나를 고른다.",
+    "- intentTag는 선배가 이번 답변에서 취한 주된 대화 의도 하나를 고른다.",
+    "- 감정 태그만 반환하며 색상, 밝기, 점멸 또는 장치 명령은 만들지 않는다.",
+    "- 슬픔을 알아차리고 용기를 북돋는 답변이라면 emotionTag=sad, intentTag=encourage로 분류한다.",
+    "",
     "선택지 규칙:",
     "- 정확히 3개를 만든다.",
     "- 사용자가 실제로 말할 법한 1인칭 한국어 문장으로 쓴다.",
@@ -434,6 +474,8 @@ export function parseModelScene(rawText: string, speaker: string, evidence: Retr
     const parsed = JSON.parse(rawText) as Partial<ModelScene>;
     const mood = isMood(parsed.mood) ? parsed.mood : "reflective";
     const portraitVariant = isMood(parsed.portraitVariant) ? parsed.portraitVariant : mood;
+    const emotionTag = isEmotionTag(parsed.emotionTag) ? parsed.emotionTag : moodToEmotion(mood);
+    const intentTag = isIntentTag(parsed.intentTag) ? parsed.intentTag : moodToIntent(mood);
     const choices = sanitizeChoices(parsed.choices);
     if (typeof parsed.text !== "string" || parsed.text.trim().length === 0) return null;
 
@@ -446,6 +488,8 @@ export function parseModelScene(rawText: string, speaker: string, evidence: Retr
       text: neutralizeUnverifiedExperience(parsed.text.trim(), evidence),
       mood,
       portraitVariant,
+      emotionTag,
+      intentTag,
       choices,
       evidenceIds
     };
@@ -491,6 +535,46 @@ function isMood(value: unknown): value is Mood {
   return value === "neutral" || value === "reflective" || value === "encouraging";
 }
 
+function isEmotionTag(value: unknown): value is EmotionTag {
+  return value === "sad" || value === "anxious" || value === "confused" || value === "calm" ||
+    value === "hopeful" || value === "happy" || value === "neutral";
+}
+
+function isIntentTag(value: unknown): value is IntentTag {
+  return value === "empathize" || value === "encourage" || value === "celebrate" ||
+    value === "reflect" || value === "guide" || value === "ground";
+}
+
+function moodToEmotion(mood: Mood): EmotionTag {
+  if (mood === "encouraging") return "hopeful";
+  if (mood === "reflective") return "calm";
+  return "neutral";
+}
+
+function moodToIntent(mood: Mood): IntentTag {
+  if (mood === "encouraging") return "encourage";
+  if (mood === "reflective") return "reflect";
+  return "guide";
+}
+
+export function estimateLightDuration(text: string): number {
+  const visibleCharacters = text.replace(/\s/g, "").length;
+  return Math.max(3000, Math.min(8000, 2000 + Math.ceil(visibleCharacters / 40) * 1000));
+}
+
+export function buildLightCue(
+  text: string,
+  emotionTag: EmotionTag,
+  intentTag: IntentTag,
+  intensity: LightIntensity = "gentle"
+): LightCue {
+  return {
+    preset: `${emotionTag}-${intentTag}`,
+    durationMs: estimateLightDuration(text),
+    intensity
+  };
+}
+
 function normalizeAgentId(agentId: string | undefined): AgentId | null {
   if (!agentId || !isAgentId(agentId)) return null;
   return agentId;
@@ -529,6 +613,24 @@ function readObjectString(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object") return null;
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === "string" ? value : null;
+}
+
+function readUpstreamError(payload: unknown): { code: string | null; type: string | null; message: string | null } {
+  if (!payload || typeof payload !== "object") {
+    return { code: null, type: null, message: null };
+  }
+
+  const error = (payload as Record<string, unknown>).error;
+  if (!error || typeof error !== "object") {
+    return { code: null, type: null, message: null };
+  }
+
+  const record = error as Record<string, unknown>;
+  return {
+    code: typeof record.code === "string" ? record.code : null,
+    type: typeof record.type === "string" ? record.type : null,
+    message: typeof record.message === "string" ? record.message.slice(0, 500) : null
+  };
 }
 
 function formatCitations(evidence: RetrievedEvidence[]) {
@@ -576,6 +678,10 @@ function sceneError(
         text,
         mood: "reflective",
         portraitVariant: "reflective",
+        emotionTag: "neutral",
+        intentTag: "reflect",
+        emotionTags: ["neutral", "reflect"],
+        lightCue: null,
         choices: [
           { id: "choice-1", label: "방금 질문을 다시 보내볼게요." },
           { id: "choice-2", label: "조금 다르게 표현해볼게요." },

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildLightCue,
+  estimateLightDuration,
   neutralizeUnverifiedExperience,
   parseModelScene,
   sanitizeChoices
@@ -31,6 +33,8 @@ test("structured scene accepts only retrieved evidence ids", () => {
       text: "나도 방향을 바꾸기 전에는 작은 실험부터 해봤어요.",
       mood: "reflective",
       portraitVariant: "encouraging",
+      emotionTag: "sad",
+      intentTag: "encourage",
       choices: ["내가 시험해볼 일을 말해볼게요.", "두려운 점부터 살펴볼래요.", "이번 주 작은 행동을 정해볼게요."],
       evidenceIds: ["evidence-1", "invented-id"]
     }),
@@ -41,6 +45,39 @@ test("structured scene accepts only retrieved evidence ids", () => {
   assert.ok(parsed);
   assert.deepEqual(parsed.evidenceIds, ["evidence-1"]);
   assert.equal(parsed.choices.length, 3);
+  assert.equal(parsed.emotionTag, "sad");
+  assert.equal(parsed.intentTag, "encourage");
+});
+
+test("invalid emotion tags fall back to the existing visual mood", () => {
+  const parsed = parseModelScene(
+    JSON.stringify({
+      text: "천천히 기준을 함께 살펴봐요.",
+      mood: "encouraging",
+      portraitVariant: "encouraging",
+      emotionTag: "red",
+      intentTag: "flash",
+      choices: ["하나", "둘", "셋"],
+      evidenceIds: []
+    }),
+    "길을 찾는 사람",
+    []
+  );
+
+  assert.ok(parsed);
+  assert.equal(parsed.emotionTag, "hopeful");
+  assert.equal(parsed.intentTag, "encourage");
+});
+
+test("light cue duration is deterministic and clamped to three through eight seconds", () => {
+  assert.equal(estimateLightDuration("짧은 답변"), 3000);
+  assert.equal(estimateLightDuration("가".repeat(100)), 5000);
+  assert.equal(estimateLightDuration("가".repeat(1000)), 8000);
+  assert.deepEqual(buildLightCue("그런 일이 있었군요. 정말 힘들었겠어요.", "sad", "encourage"), {
+    preset: "sad-encourage",
+    durationMs: 3000,
+    intensity: "gentle"
+  });
 });
 
 test("duplicate or malformed choices fall back to a safe set", () => {

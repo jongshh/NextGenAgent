@@ -1,0 +1,12 @@
+{
+  "name": "@nextgen/hue-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "setup": "node src/setup.mjs",
+    "build": "node --check src/server.mjs && node --check src/setup.mjs",
+    "typecheck": "node --check src/server.mjs && node --check src/setup.mjs"
+  }
+}

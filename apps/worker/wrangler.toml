@@ -5,6 +5,7 @@ compatibility_date = "2026-07-13"
 [vars]
 ALLOWED_ORIGIN = "https://nextgenagent-worker.jsindustriests.workers.dev"
 SUPABASE_FUNCTIONS_URL = "https://wfyghzowxusawsztprqh.supabase.co/functions/v1"
+OPENAI_MODEL = "gpt-5.4-mini"
 
 [assets]
 directory = "../web/dist"

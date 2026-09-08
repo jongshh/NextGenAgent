@@ -4,6 +4,17 @@ import { MentorHub } from "./components/MentorHub";
 import { ConversationStage } from "./components/ConversationStage";
 import { ConversationStageB } from "./components/ConversationStageB";
 import { SessionGate } from "./components/SessionGate";
+import { HueControl } from "./components/HueControl";
+import {
+  deriveLightCue,
+  isHueCompanionHost,
+  loadHueEffectsEnabled,
+  playAssistantOutput,
+  readHueStatus,
+  saveHueEffectsEnabled,
+  stopHueEffects,
+  type HueConnectionState
+} from "./hue";
 import {
   hasLocalSessions,
   loadAllSessions,
@@ -76,6 +87,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<string | null>(null);
+  const [hueEnabled, setHueEnabled] = useState(() => loadHueEffectsEnabled());
+  const [hueState, setHueState] = useState<HueConnectionState>("disabled");
 
   const agent = AGENTS[agentId];
   const savedSessions = Object.fromEntries(
@@ -87,6 +100,26 @@ export default function App() {
       void saveCloudSnapshot(participantId);
     }
   }, [accessReady, participantId]);
+
+  useEffect(() => {
+    let active = true;
+    let timer: number | undefined;
+
+    async function refreshHueStatus() {
+      const nextState = await readHueStatus(hueEnabled);
+      if (active) setHueState(nextState);
+    }
+
+    void refreshHueStatus();
+    if (isHueCompanionHost() && hueEnabled) {
+      timer = window.setInterval(() => void refreshHueStatus(), 10_000);
+    }
+
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [hueEnabled]);
 
   async function recoverSession(nextParticipantId: string) {
     const normalizedId = nextParticipantId.trim();
@@ -194,6 +227,28 @@ export default function App() {
       saveSession(completedSession);
       if (participantId) void saveCloudSnapshot(participantId);
 
+      const lightCue = payload.scene.lightCue || deriveLightCue(
+        payload.scene.text || payload.message,
+        payload.scene.mood,
+        payload.scene.emotionTag,
+        payload.scene.intentTag
+      );
+
+      void playAssistantOutput(
+        agentId,
+        payload.id || assistantTurn.id,
+        lightCue,
+        hueEnabled
+      ).then(async (played) => {
+        if (!isHueCompanionHost() || !hueEnabled) return;
+        if (!played) {
+          const actualStatus = await readHueStatus(hueEnabled);
+          setHueState(actualStatus);
+        } else {
+          setHueState("connected");
+        }
+      });
+
       if (!response.ok) {
         setErrorMessage("연결이 완전히 회복되지는 않았어요.");
         setRetryText(trimmed);
@@ -219,6 +274,19 @@ export default function App() {
     setRetryText(null);
   }
 
+  function toggleHueEffects(enabled: boolean) {
+    setHueEnabled(enabled);
+    saveHueEffectsEnabled(enabled);
+    if (!enabled) {
+      setHueState("disabled");
+      void stopHueEffects();
+    }
+  }
+
+  const hueControl = isHueCompanionHost() ? (
+    <HueControl enabled={hueEnabled} state={hueState} onToggle={toggleHueEffects} />
+  ) : null;
+
   if (!accessReady) {
     return (
       <SessionGate
@@ -231,19 +299,44 @@ export default function App() {
 
   if (view === "hub") {
     return (
-      <MentorHub
-        visuals={MENTOR_VISUALS}
-        savedSessions={savedSessions}
-        conversationUi={conversationUi}
-        onConversationUiChange={changeConversationUi}
-        onSelect={enterConversation}
-      />
+      <>
+        <MentorHub
+          visuals={MENTOR_VISUALS}
+          savedSessions={savedSessions}
+          conversationUi={conversationUi}
+          onConversationUiChange={changeConversationUi}
+          onSelect={enterConversation}
+        />
+        {hueControl}
+      </>
     );
   }
 
   if (conversationUi === "B") {
     return (
-      <ConversationStageB
+      <>
+        <ConversationStageB
+          agent={agent}
+          portrait={MENTOR_VISUALS[agentId].image}
+          session={session}
+          input={input}
+          isLoading={isLoading}
+          errorMessage={errorMessage}
+          retryText={retryText}
+          onInputChange={setInput}
+          onSend={(text) => void sendMessage(text)}
+          onRetry={() => retryText && void sendMessage(retryText, false)}
+          onReset={resetConversation}
+          onBack={() => setView("hub")}
+        />
+        {hueControl}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <ConversationStage
         agent={agent}
         portrait={MENTOR_VISUALS[agentId].image}
         session={session}
@@ -257,24 +350,8 @@ export default function App() {
         onReset={resetConversation}
         onBack={() => setView("hub")}
       />
-    );
-  }
-
-  return (
-    <ConversationStage
-      agent={agent}
-      portrait={MENTOR_VISUALS[agentId].image}
-      session={session}
-      input={input}
-      isLoading={isLoading}
-      errorMessage={errorMessage}
-      retryText={retryText}
-      onInputChange={setInput}
-      onSend={(text) => void sendMessage(text)}
-      onRetry={() => retryText && void sendMessage(retryText, false)}
-      onReset={resetConversation}
-      onBack={() => setView("hub")}
-    />
+      {hueControl}
+    </>
   );
 }
 

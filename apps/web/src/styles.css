@@ -1463,3 +1463,55 @@ a:focus-visible {
     animation-iteration-count: 1 !important;
   }
 }
+
+.hue-control {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(19, 23, 31, 0.9);
+  color: #f5f1e8;
+  font-size: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.hue-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8b9099;
+}
+
+.hue-connected .hue-status-dot {
+  background: #6fd69a;
+  box-shadow: 0 0 9px rgba(111, 214, 154, 0.8);
+}
+
+.hue-offline .hue-status-dot {
+  background: #e39a73;
+}
+
+.hue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.hue-toggle input {
+  accent-color: #f1b84b;
+}
+
+@media (max-width: 640px) {
+  .hue-control {
+    right: 10px;
+    bottom: 10px;
+  }
+}

@@ -9,6 +9,9 @@ logs/
 artifacts/
 /Storygator
 *.bat
+!setup-hue.bat
+!start-test-web.bat
 supabase/.temp/
 supabase/functions/.env
 supabase/.env
+apps/hue-companion/.local/

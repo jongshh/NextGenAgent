@@ -2,6 +2,14 @@ import type { AgentId } from "@nextgen/agents";
 
 export type Mood = "neutral" | "reflective" | "encouraging";
 export type ConversationUiVariant = "A" | "B";
+export type EmotionTag = "sad" | "anxious" | "confused" | "calm" | "hopeful" | "happy" | "neutral";
+export type IntentTag = "empathize" | "encourage" | "celebrate" | "reflect" | "guide" | "ground";
+
+export interface LightCue {
+  preset: `${EmotionTag}-${IntentTag}`;
+  durationMs: number;
+  intensity: "low" | "gentle" | "standard";
+}
 
 export interface ChatAvatarProps {
   role: "user" | "assistant";
@@ -33,6 +41,10 @@ export interface ChatScene {
   text: string;
   mood: Mood;
   portraitVariant: Mood;
+  emotionTag?: EmotionTag;
+  intentTag?: IntentTag;
+  emotionTags?: [EmotionTag, IntentTag];
+  lightCue?: LightCue | null;
   choices: Choice[];
 }
 
