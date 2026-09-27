@@ -85,9 +85,11 @@ test("voice feature flag and agent validation fail before provider calls", async
 
 test("live session proxy keeps the long-lived API key on the server", async () => {
   const originalFetch = globalThis.fetch;
+  let upstreamUrl = "";
   let upstreamAuthorization = "";
   let upstreamBody: Record<string, unknown> = {};
-  globalThis.fetch = async (_input, init) => {
+  globalThis.fetch = async (input, init) => {
+    upstreamUrl = String(input);
     upstreamAuthorization = new Headers(init?.headers).get("Authorization") || "";
     upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return Response.json({
@@ -104,10 +106,16 @@ test("live session proxy keeps the long-lived API key on the server", async () =
         activationMode: "tap_vad",
         sdp: "offer-sdp"
       })
+    }, {
+      ...baseVoiceEnv,
+      SUPABASE_FUNCTIONS_URL: "https://stale-proxy.example.test/functions/v1",
+      NEXTGEN_PROXY_SECRET: "proxy-secret"
     });
     assert.equal(response?.status, 200);
+    assert.equal(upstreamUrl, "https://api.openai.com/v1/live/sessions");
     assert.equal(upstreamAuthorization, "Bearer server-only-test-key");
     assert.equal((upstreamBody.session as { model?: string }).model, "gpt-live-1");
+    assert.equal("store" in (upstreamBody.session as Record<string, unknown>), false);
     assert.deepEqual(upstreamBody.transport, { type: "webrtc", sdp: "offer-sdp" });
     assert.doesNotMatch(await response!.text(), /server-only-test-key/);
   } finally {

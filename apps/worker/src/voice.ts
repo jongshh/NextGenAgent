@@ -120,8 +120,7 @@ async function createVoiceSession(request: Request, env: Env, preview: boolean):
       model: env.OPENAI_LIVE_MODEL?.trim() || requested.model,
       instructions: buildLiveInstructions(body.agentId, requested, activationMode, preview),
       audio: { output: { voice: requested.voiceId } },
-      delegation: { type: "client" },
-      store: false
+      delegation: { type: "client" }
     },
     transport: { type: "webrtc", sdp: body.sdp },
     safetyIdentifier: await safetyIdentifier(body.conversationId || `preview-${body.agentId}`)
@@ -130,6 +129,21 @@ async function createVoiceSession(request: Request, env: Env, preview: boolean):
   try {
     const upstream = await callOpenAIProxy("live_session", payload, env);
     const responseBody = await upstream.text();
+    if (!upstream.ok) {
+      const diagnostic = providerErrorDiagnostic(responseBody);
+      console.error(JSON.stringify({
+        event: "voice_session_create_failed",
+        status: upstream.status,
+        providerCode: diagnostic.code,
+        providerParam: diagnostic.param
+      }));
+      return voiceJson(request, env, {
+        error: "voice_session_rejected",
+        message: diagnostic.message,
+        providerCode: diagnostic.code,
+        providerParam: diagnostic.param
+      }, upstream.status);
+    }
     return new Response(responseBody, {
       status: upstream.status,
       headers: {
@@ -298,6 +312,20 @@ function hasProfileBackend(env: Env): boolean {
 }
 
 async function callOpenAIProxy(operation: "live_session", payload: unknown, env: Env): Promise<Response> {
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  const record = payload as { safetyIdentifier?: string; session: unknown; transport: unknown };
+  if (apiKey) {
+    return fetch("https://api.openai.com/v1/live/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "OpenAI-Safety-Identifier": record.safetyIdentifier || "nga_anonymous"
+      },
+      body: JSON.stringify({ session: record.session, transport: record.transport })
+    });
+  }
+
   const base = env.SUPABASE_FUNCTIONS_URL?.trim().replace(/\/$/, "");
   const secret = env.NEXTGEN_PROXY_SECRET?.trim();
   if (base && secret) {
@@ -307,18 +335,31 @@ async function callOpenAIProxy(operation: "live_session", payload: unknown, env:
       body: JSON.stringify({ operation, payload })
     });
   }
-  const apiKey = env.OPENAI_API_KEY?.trim();
-  if (!apiKey) throw new Error("OpenAI is not configured");
-  const record = payload as { safetyIdentifier?: string; session: unknown; transport: unknown };
-  return fetch("https://api.openai.com/v1/live/sessions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "OpenAI-Safety-Identifier": record.safetyIdentifier || "nga_anonymous"
-    },
-    body: JSON.stringify({ session: record.session, transport: record.transport })
-  });
+  throw new Error("OpenAI is not configured");
+}
+
+function providerErrorDiagnostic(responseBody: string): { message: string; code: string; param: string } {
+  let message = "음성 API가 세션 요청을 거부했습니다.";
+  let code = "unknown";
+  let param = "";
+  try {
+    const payload = JSON.parse(responseBody) as {
+      error?: string | { message?: unknown; code?: unknown; type?: unknown; param?: unknown };
+      message?: unknown;
+    };
+    if (typeof payload.error === "string") {
+      code = payload.error.slice(0, 80);
+    } else if (payload.error && typeof payload.error === "object") {
+      if (typeof payload.error.code === "string") code = payload.error.code.slice(0, 80);
+      else if (typeof payload.error.type === "string") code = payload.error.type.slice(0, 80);
+      if (typeof payload.error.param === "string") param = payload.error.param.slice(0, 120);
+      if (typeof payload.error.message === "string") message = payload.error.message.slice(0, 300);
+    }
+    if (typeof payload.message === "string") message = payload.message.slice(0, 300);
+  } catch {
+    if (responseBody.trim()) message = responseBody.trim().slice(0, 300);
+  }
+  return { message, code, param };
 }
 
 async function invokeProfileApi(payload: unknown, env: Env): Promise<Response> {

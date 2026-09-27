@@ -124,8 +124,15 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
           sdp
         })
       });
-      const result = await response.json() as { session?: { id?: string }; transport?: { sdp?: string }; error?: string };
-      if (!response.ok || !result.transport?.sdp) throw new Error(readVoiceError(result.error));
+      const result = await response.json() as {
+        session?: { id?: string };
+        transport?: { sdp?: string };
+        error?: string | { message?: string; code?: string };
+        message?: string;
+        providerCode?: string;
+        providerParam?: string;
+      };
+      if (!response.ok || !result.transport?.sdp) throw new Error(readVoiceError(result));
       this.liveSessionId = result.session?.id || null;
       await peer.setRemoteDescription({ type: "answer", sdp: result.transport.sdp });
     } catch (error) {
@@ -382,8 +389,22 @@ async function waitForIce(peer: RTCPeerConnection): Promise<void> {
   });
 }
 
-function readVoiceError(code?: string): string {
+function readVoiceError(result: {
+  error?: string | { message?: string; code?: string };
+  message?: string;
+  providerCode?: string;
+  providerParam?: string;
+}): string {
+  const code = typeof result.error === "string" ? result.error : result.error?.code;
   if (code === "voice_disabled") return "음성 기능이 서버에서 비활성화되어 있어요.";
   if (code === "voice_profile_disabled") return "이 현자의 음성이 비활성화되어 있어요.";
+  if (code === "voice_session_rejected") {
+    const detail = result.providerCode && result.providerCode !== "unknown"
+      ? ` (${result.providerCode}${result.providerParam ? `: ${result.providerParam}` : ""})`
+      : "";
+    return `${result.message || "음성 API가 세션 요청을 거부했습니다."}${detail}`;
+  }
+  if (typeof result.error === "object" && result.error?.message) return result.error.message;
+  if (result.message) return result.message;
   return "음성 세션을 시작하지 못했어요. 잠시 후 다시 시도해 주세요.";
 }
