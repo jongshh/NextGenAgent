@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentConfig } from "@nextgen/agents";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -27,6 +27,7 @@ interface ConversationStageProps {
   onRetry: () => void;
   onReset: () => void;
   onBack: () => void;
+  voiceControl?: ReactNode;
 }
 
 export function ConversationStage({
@@ -41,7 +42,8 @@ export function ConversationStage({
   onSend,
   onRetry,
   onReset,
-  onBack
+  onBack,
+  voiceControl
 }: ConversationStageProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -222,6 +224,7 @@ export function ConversationStage({
           )}
         </AnimatePresence>
 
+        {voiceControl}
         <form
           className="conversation-composer"
           onSubmit={(event) => {

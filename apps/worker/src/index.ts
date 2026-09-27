@@ -7,8 +7,9 @@ import {
   type RetrievedEvidence
 } from "@nextgen/rag";
 import dreamMentorChunks from "../../../data/processed/dream-mentor.chunks.json";
+import { handleVoiceRoute } from "./voice";
 
-interface Env {
+export interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_VECTOR_STORE_ID?: string;
   OPENAI_MODEL?: string;
@@ -16,6 +17,10 @@ interface Env {
   SUPABASE_FUNCTIONS_URL?: string;
   NEXTGEN_PROXY_SECRET?: string;
   ALLOWED_ORIGIN?: string;
+  OPENAI_LIVE_MODEL?: string;
+  VOICE_ENABLED?: string;
+  VOICE_ADMIN_PASSWORD?: string;
+  VOICE_ADMIN_SESSION_SECRET?: string;
 }
 
 interface ChatMessage {
@@ -27,6 +32,9 @@ interface ChatRequest {
   agentId?: string;
   messages?: ChatMessage[];
   sessionId?: string;
+  conversationId?: string;
+  turnId?: string;
+  inputMode?: "text" | "voice";
 }
 
 interface SessionRequest {
@@ -98,13 +106,23 @@ const SCENE_SCHEMA = {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(env) });
+    const url = new URL(request.url);
+    const voiceResponse = await handleVoiceRoute(request, env, url);
+    if (voiceResponse) return voiceResponse;
+
+    if (url.pathname.startsWith("/api/") && !isAllowedRequestOrigin(request, env, url)) {
+      return new Response(JSON.stringify({ error: "origin_not_allowed", message: "Origin is not allowed." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
     }
 
-    const url = new URL(request.url);
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: requestCorsHeaders(request, env, url) });
+    }
+
     if (url.pathname === "/api/health") {
-      return json(
+      return withRequestCors(json(
         {
           ok: true,
           chunks: chunks.length,
@@ -119,26 +137,50 @@ export default {
           supabaseProxy: hasSupabaseProxy(env)
         },
         env
-      );
+      ), request, env, url);
     }
 
     if (url.pathname === "/api/chat" && request.method === "POST") {
-      return handleChat(request, env);
+      return withRequestCors(await handleChat(request, env), request, env, url);
     }
 
     if (url.pathname === "/api/session/load" && request.method === "POST") {
-      return handleSession(request, env, "load");
+      return withRequestCors(await handleSession(request, env, "load"), request, env, url);
     }
 
     if (url.pathname === "/api/session/save" && request.method === "POST") {
-      return handleSession(request, env, "save");
+      return withRequestCors(await handleSession(request, env, "save"), request, env, url);
     }
 
-    return json({ error: "not_found", message: "Unknown endpoint." }, env, 404);
+    return withRequestCors(
+      json({ error: "not_found", message: "Unknown endpoint." }, env, 404),
+      request,
+      env,
+      url
+    );
   }
 };
 
 async function handleChat(request: Request, env: Env): Promise<Response> {
+  const probe = await request.clone().json().catch(() => null) as ChatRequest | null;
+  const cache = await chatIdempotencyCache();
+  const cacheKey = probe?.inputMode === "voice" && probe.conversationId && probe.turnId
+    ? new Request(`https://chat-idempotency.invalid/${encodeURIComponent(probe.conversationId)}/${encodeURIComponent(probe.turnId)}`)
+    : null;
+  if (cache && cacheKey) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+  const response = await handleChatCore(request, env);
+  if (cache && cacheKey && response.ok) {
+    const stored = new Response(response.clone().body, response);
+    stored.headers.set("Cache-Control", "max-age=3600");
+    await cache.put(cacheKey, stored);
+  }
+  return response;
+}
+
+async function handleChatCore(request: Request, env: Env): Promise<Response> {
   let body: ChatRequest;
   try {
     body = await request.json();
@@ -281,6 +323,10 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     },
     env
   );
+}
+
+async function chatIdempotencyCache(): Promise<Cache | null> {
+  return typeof caches === "undefined" ? null : caches.open("nextgen-voice-chat-idempotency");
 }
 
 function normalizeMessages(value: unknown): ChatMessage[] {
@@ -785,7 +831,7 @@ async function callOpenAI(
 }
 
 async function invokeSupabaseFunction(
-  functionName: "session-api" | "openai-proxy",
+  functionName: "session-api" | "openai-proxy" | "voice-profile-api",
   payload: unknown,
   env: Env
 ): Promise<Response> {
@@ -817,6 +863,55 @@ function corsHeaders(env: Env): HeadersInit {
   return {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization"
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Credentials": "true"
   };
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function isAllowedRequestOrigin(request: Request, env: Env, requestUrl: URL): boolean {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+
+  const configuredOrigins = (env.ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (origin === requestUrl.origin || configuredOrigins.includes(origin) || configuredOrigins.includes("*")) {
+    return true;
+  }
+
+  if (!isLoopbackHostname(requestUrl.hostname)) return false;
+
+  try {
+    const originUrl = new URL(origin);
+    return originUrl.protocol === "http:" && isLoopbackHostname(originUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function requestCorsHeaders(request: Request, env: Env, requestUrl: URL): Headers {
+  const headers = new Headers(corsHeaders(env));
+  const origin = request.headers.get("Origin");
+
+  if (origin && isAllowedRequestOrigin(request, env, requestUrl)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+  }
+  headers.set("Vary", "Origin");
+  return headers;
+}
+
+function withRequestCors(response: Response, request: Request, env: Env, requestUrl: URL): Response {
+  const headers = new Headers(response.headers);
+  requestCorsHeaders(request, env, requestUrl).forEach((value, name) => headers.set(name, value));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }

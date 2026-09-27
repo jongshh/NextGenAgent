@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AGENTS, type AgentId } from "@nextgen/agents";
 import { MentorHub } from "./components/MentorHub";
 import { ConversationStage } from "./components/ConversationStage";
 import { ConversationStageB } from "./components/ConversationStageB";
 import { SessionGate } from "./components/SessionGate";
 import { HueControl } from "./components/HueControl";
+import { VoiceControl } from "./components/VoiceControl";
 import {
   deriveLightCue,
   isHueCompanionHost,
@@ -35,8 +36,11 @@ import type {
   ConversationSession,
   ConversationTurn,
   ConversationUiVariant,
-  SessionData
+  SessionData,
+  VoiceActivationMode,
+  VoiceState
 } from "./types";
+import { OpenAiLiveAdapter, type MentorVoiceResult, type VoiceSessionAdapter } from "./voice";
 
 const workerUrl = import.meta.env.VITE_WORKER_URL || (import.meta.env.DEV ? "http://localhost:8787" : "");
 
@@ -89,11 +93,45 @@ export default function App() {
   const [retryText, setRetryText] = useState<string | null>(null);
   const [hueEnabled, setHueEnabled] = useState(() => loadHueEffectsEnabled());
   const [hueState, setHueState] = useState<HueConnectionState>("disabled");
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceMode, setVoiceMode] = useState<VoiceActivationMode>(loadVoiceMode);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [voiceUserTranscript, setVoiceUserTranscript] = useState("");
+  const [voiceAssistantTranscript, setVoiceAssistantTranscript] = useState("");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const voiceAdapterRef = useRef<VoiceSessionAdapter | null>(null);
+  const sessionRef = useRef(session);
+  const hueEnabledRef = useRef(hueEnabled);
+  const loadingRef = useRef(false);
 
   const agent = AGENTS[agentId];
   const savedSessions = Object.fromEntries(
     (Object.keys(AGENTS) as AgentId[]).map((id) => [id, Boolean(loadSession(id))])
   ) as Record<AgentId, boolean>;
+
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { hueEnabledRef.current = hueEnabled; }, [hueEnabled]);
+  useEffect(() => () => { void voiceAdapterRef.current?.stop(); }, []);
+
+  useEffect(() => {
+    if (voiceMode !== "push_to_talk" || voiceState === "idle" || voiceState === "error") return;
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || event.target instanceof HTMLTextAreaElement) return;
+      event.preventDefault();
+      voiceAdapterRef.current?.setPushToTalk(true);
+    };
+    const keyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+      event.preventDefault();
+      voiceAdapterRef.current?.setPushToTalk(false);
+    };
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    return () => {
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+    };
+  }, [voiceMode, voiceState]);
 
   useEffect(() => {
     if (accessReady && participantId && hasLocalSessions()) {
@@ -162,6 +200,7 @@ export default function App() {
 
   function enterConversation(nextAgentId: AgentId) {
     if (!AGENTS[nextAgentId].active) return;
+    void stopVoiceConversation();
     setAgentId(nextAgentId);
     saveLastAgent(nextAgentId);
     setSession(getOrCreateSession(nextAgentId));
@@ -176,22 +215,30 @@ export default function App() {
     saveConversationUiVariant(variant);
   }
 
-  async function sendMessage(text: string, appendUser = true) {
+  async function sendMessage(
+    text: string,
+    appendUser = true,
+    inputMode: "text" | "voice" = "text",
+    turnId?: string
+  ): Promise<MentorVoiceResult | null> {
     const trimmed = text.trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed || loadingRef.current) return null;
 
-    const userTurn = makeTurn("user", trimmed);
+    const currentSession = sessionRef.current;
+    const userTurn = makeTurn("user", trimmed, inputMode, turnId);
     const nextSession = appendUser
-      ? updateSession(session, [...session.turns, userTurn])
-      : session;
+      ? updateSession(currentSession, [...currentSession.turns, userTurn])
+      : currentSession;
 
     if (appendUser) {
       setSession(nextSession);
+      sessionRef.current = nextSession;
       saveSession(nextSession);
       if (participantId) void saveCloudSnapshot(participantId);
     }
     setInput("");
     setIsLoading(true);
+    loadingRef.current = true;
     setErrorMessage(null);
     setRetryText(null);
 
@@ -202,7 +249,15 @@ export default function App() {
         body: JSON.stringify({
           agentId,
           sessionId: nextSession.id,
-          messages: nextSession.turns.map(({ role, content }) => ({ role, content }))
+          conversationId: nextSession.id,
+          turnId: turnId || userTurn.id,
+          inputMode,
+          messages: nextSession.turns.map((turn) => ({
+            role: turn.role,
+            content: turn.role === "assistant" && turn.deliveryStatus === "interrupted" && turn.spokenText
+              ? turn.spokenText
+              : turn.content
+          }))
         })
       });
       const payload = (await response.json()) as ChatResponse;
@@ -220,10 +275,12 @@ export default function App() {
         groundingConfidence: payload.groundingConfidence,
         insufficientEvidence: payload.insufficientEvidence,
         citations: payload.citations || [],
-        safetyStatus: payload.safety?.status || "allowed"
+        safetyStatus: payload.safety?.status || "allowed",
+        inputMode
       };
       const completedSession = updateSession(nextSession, [...nextSession.turns, assistantTurn]);
       setSession(completedSession);
+      sessionRef.current = completedSession;
       saveSession(completedSession);
       if (participantId) void saveCloudSnapshot(participantId);
 
@@ -234,39 +291,103 @@ export default function App() {
         payload.scene.intentTag
       );
 
-      void playAssistantOutput(
-        agentId,
-        payload.id || assistantTurn.id,
-        lightCue,
-        hueEnabled
-      ).then(async (played) => {
-        if (!isHueCompanionHost() || !hueEnabled) return;
-        if (!played) {
-          const actualStatus = await readHueStatus(hueEnabled);
-          setHueState(actualStatus);
-        } else {
-          setHueState("connected");
-        }
-      });
+      if (inputMode === "text") {
+        void playAssistantOutput(
+          agentId,
+          payload.id || assistantTurn.id,
+          lightCue,
+          hueEnabled
+        ).then(async (played) => {
+          if (!isHueCompanionHost() || !hueEnabled) return;
+          if (!played) setHueState(await readHueStatus(hueEnabled));
+          else setHueState("connected");
+        });
+      }
 
       if (!response.ok) {
         setErrorMessage("연결이 완전히 회복되지는 않았어요.");
         setRetryText(trimmed);
       }
+      return { message: payload.message, responseId: payload.id || assistantTurn.id, lightCue };
     } catch {
       setErrorMessage("대화를 이어오는 중 연결이 끊겼어요.");
       setRetryText(trimmed);
+      return null;
     } finally {
       setIsLoading(false);
+      loadingRef.current = false;
     }
+  }
+
+  async function startVoiceConversation() {
+    if (voiceAdapterRef.current) return;
+    setVoiceError(null);
+    setVoiceMuted(false);
+    const adapter = new OpenAiLiveAdapter(workerUrl, agentId, sessionRef.current.id, voiceMode, {
+      onState: setVoiceState,
+      onTranscript: (speaker, text) => {
+        if (speaker === "user") setVoiceUserTranscript(text);
+        else setVoiceAssistantTranscript(text);
+      },
+      onDelegation: (text, id) => sendMessage(text, true, "voice", id),
+      onPlaybackStart: (result) => {
+        if (!result.lightCue) return;
+        void playAssistantOutput(agentId, result.responseId, result.lightCue, hueEnabledRef.current);
+      },
+      onPlaybackEnd: (_result, spokenText) => {
+        if (spokenText) markLatestVoiceDelivery("completed", spokenText);
+        if (isHueCompanionHost()) void stopHueEffects();
+      },
+      onInterrupted: (_result, spokenText) => {
+        markLatestVoiceDelivery("interrupted", spokenText);
+        if (isHueCompanionHost()) void stopHueEffects();
+      },
+      onError: setVoiceError
+    });
+    voiceAdapterRef.current = adapter;
+    try {
+      await adapter.start();
+    } catch (error) {
+      voiceAdapterRef.current = null;
+      setVoiceState("error");
+      setVoiceError(error instanceof Error ? error.message : "음성 대화를 시작하지 못했어요.");
+    }
+  }
+
+  async function stopVoiceConversation() {
+    const adapter = voiceAdapterRef.current;
+    voiceAdapterRef.current = null;
+    if (adapter) await adapter.stop();
+    setVoiceState("idle");
+    setVoiceMuted(false);
+    setVoiceUserTranscript("");
+    setVoiceAssistantTranscript("");
+    if (isHueCompanionHost()) await stopHueEffects();
+  }
+
+  function markLatestVoiceDelivery(status: "completed" | "interrupted", spokenText: string) {
+    const current = sessionRef.current;
+    const index = [...current.turns].map((turn) => turn.role).lastIndexOf("assistant");
+    if (index < 0) return;
+    const turns = current.turns.map((turn, turnIndex) => turnIndex === index
+      ? { ...turn, deliveryStatus: status, spokenText }
+      : turn
+    );
+    const updated = updateSession(current, turns);
+    sessionRef.current = updated;
+    setSession(updated);
+    saveSession(updated);
+    if (participantId) void saveCloudSnapshot(participantId);
   }
 
   function resetConversation() {
     const confirmed = window.confirm("이 선배와의 대화 기록을 지우고 새로 시작할까요?");
     if (!confirmed) return;
+    void stopVoiceConversation();
     removeSession(agentId);
     const nextSession = createSession(agentId);
     setSession(nextSession);
+    sessionRef.current = nextSession;
     saveSession(nextSession);
     if (participantId) void saveCloudSnapshot(participantId);
     setInput("");
@@ -286,6 +407,29 @@ export default function App() {
   const hueControl = isHueCompanionHost() ? (
     <HueControl enabled={hueEnabled} state={hueState} onToggle={toggleHueEffects} />
   ) : null;
+
+  const voiceControl = (
+    <VoiceControl
+      state={voiceState}
+      activationMode={voiceMode}
+      muted={voiceMuted}
+      userTranscript={voiceUserTranscript}
+      assistantTranscript={voiceAssistantTranscript}
+      error={voiceError}
+      onActivationModeChange={(mode) => {
+        setVoiceMode(mode);
+        saveVoiceMode(mode);
+      }}
+      onStart={() => void startVoiceConversation()}
+      onStop={() => void stopVoiceConversation()}
+      onToggleMute={() => {
+        const next = !voiceMuted;
+        setVoiceMuted(next);
+        voiceAdapterRef.current?.setMuted(next);
+      }}
+      onPushToTalk={(active) => voiceAdapterRef.current?.setPushToTalk(active)}
+    />
+  );
 
   if (!accessReady) {
     return (
@@ -327,7 +471,8 @@ export default function App() {
           onSend={(text) => void sendMessage(text)}
           onRetry={() => retryText && void sendMessage(retryText, false)}
           onReset={resetConversation}
-          onBack={() => setView("hub")}
+          onBack={() => { void stopVoiceConversation(); setView("hub"); }}
+          voiceControl={voiceControl}
         />
         {hueControl}
       </>
@@ -348,7 +493,8 @@ export default function App() {
         onSend={(text) => void sendMessage(text)}
         onRetry={() => retryText && void sendMessage(retryText, false)}
         onReset={resetConversation}
-        onBack={() => setView("hub")}
+        onBack={() => { void stopVoiceConversation(); setView("hub"); }}
+        voiceControl={voiceControl}
       />
       {hueControl}
     </>
@@ -411,12 +557,18 @@ function createSession(agentId: AgentId): ConversationSession {
   };
 }
 
-function makeTurn(role: "user" | "assistant", content: string): ConversationTurn {
+function makeTurn(
+  role: "user" | "assistant",
+  content: string,
+  inputMode: "text" | "voice" = "text",
+  id = createId()
+): ConversationTurn {
   return {
-    id: createId(),
+    id,
     role,
     content,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    inputMode
   };
 }
 
@@ -429,6 +581,17 @@ function updateSession(
     turns,
     updatedAt: Date.now()
   };
+}
+
+function loadVoiceMode(): VoiceActivationMode {
+  try {
+    const value = localStorage.getItem("nextgenagent:voice-mode:v1");
+    return value === "wake_prefix" || value === "push_to_talk" ? value : "tap_vad";
+  } catch { return "tap_vad"; }
+}
+
+function saveVoiceMode(mode: VoiceActivationMode): void {
+  try { localStorage.setItem("nextgenagent:voice-mode:v1", mode); } catch { /* optional preference */ }
 }
 
 function createId(): string {

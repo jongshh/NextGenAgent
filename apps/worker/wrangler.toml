@@ -1,11 +1,18 @@
 name = "nextgenagent-worker"
 main = "src/index.ts"
-compatibility_date = "2026-07-13"
+compatibility_date = "2026-09-27"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ALLOWED_ORIGIN = "https://nextgenagent-worker.jsindustriests.workers.dev"
 SUPABASE_FUNCTIONS_URL = "https://wfyghzowxusawsztprqh.supabase.co/functions/v1"
 OPENAI_MODEL = "gpt-5.4-mini"
+OPENAI_LIVE_MODEL = "gpt-live-1"
+VOICE_ENABLED = "true"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
 
 [assets]
 directory = "../web/dist"

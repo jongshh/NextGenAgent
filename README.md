@@ -20,6 +20,8 @@
 - `Enter` 전송, `Shift+Enter` 줄바꿈, 한글 조합 중 전송 방지
 - 브라우저 세션 저장, 대화 불러오기, 초기화, 실패한 질문 재시도
 - 로컬 기록 우선 복구와 참여 ID 기반 Supabase 기기 간 동기화
+- WebRTC 기반 실시간 음성 대화, 끼어들기, 실시간 자막과 push-to-talk
+- 현자별 독립 음성 및 개발자 전용 `/developer/voices` 설정 패널
 - 출처를 상시 노출하지 않고 `이 답변의 바탕` 서랍에서 확인
 
 허브의 `버전 A / 버전 B` 컨트롤로 대화 화면을 바꿀 수 있습니다. 두 버전은 동일한 세션을 공유하며 선택한 화면은 브라우저에 저장됩니다. 버전 B에서는 사용자는 오른쪽, 선배는 왼쪽에 표시되고 선배 답변은 문장별 말풍선으로 이어집니다.
@@ -36,13 +38,15 @@ apps/worker              Cloudflare Worker
   ├─ local keyword search
   ├─ OpenAI Vector Store search
   ├─ Responses API structured output
+  ├─ GPT-Live WebRTC 세션과 client delegation
   ├─ evidence ID validation
   └─ output moderation
           │ shared proxy secret
 supabase
   ├─ session-api         참여 ID 해시 기반 세션 저장
   ├─ openai-proxy        OpenAI API key와 Vector Store ID 보관
-  └─ Postgres            private participant_sessions
+  ├─ voice-profile-api   현자별 음성 설정 저장
+  └─ Postgres            private participant_sessions / mentor_voice_profiles
 
 packages/agents          4개 선배 설정과 공통 상담 정책
 packages/rag             정규화 스키마, 로컬 검색, 검색 결과 병합
@@ -82,6 +86,10 @@ OPENAI_MODERATION_MODEL=omni-moderation-latest
 ALLOWED_ORIGIN=http://localhost:5173
 SUPABASE_FUNCTIONS_URL=https://wfyghzowxusawsztprqh.supabase.co/functions/v1
 NEXTGEN_PROXY_SECRET=<Supabase와 Cloudflare에 등록한 동일한 값>
+OPENAI_LIVE_MODEL=gpt-live-1
+VOICE_ENABLED=true
+VOICE_ADMIN_PASSWORD=<개발자 패널 공용 암호>
+VOICE_ADMIN_SESSION_SECRET=<32자 이상의 임의 문자열>
 ```
 
 두 터미널에서 실행합니다.
@@ -98,6 +106,8 @@ npm run dev:web
 Philips Hue를 사용하는 현장 시연은 Windows에서 `setup-hue.bat`를 더블클릭하면 자동 설치 마법사로 설정할 수 있습니다. 수동 설정은 Bridge와 같은 네트워크에서 최초 한 번 `npm run hue:setup`을 실행한 뒤 `npm run demo:hue`로 시작합니다. 네 명의 선배에 서로 다른 컬러 전구를 지정하며, 응답 효과가 끝나면 전구는 직전 상태로 복원됩니다. 자세한 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)을 참고합니다.
 
 Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 더블클릭합니다. 일반 웹 모드는 Hue 장비 없이 Worker와 Vite 웹을 실행하고, Hue 포함 모드는 로컬 Worker와 Companion을 연결해 최신 코드로 실제 조명까지 테스트합니다.
+
+음성 기능만 빠르게 확인하려면 `start-voice-test.bat`를 더블클릭합니다. `.dev.vars`의 음성 필수 설정을 검사한 뒤 로컬 Worker와 웹을 실행하고, 일반 대화 화면과 `/developer/voices`를 함께 엽니다. 키나 암호 값은 화면에 출력하지 않습니다.
 
 웹은 기본적으로 `http://localhost:8787`의 Worker를 사용합니다. 다른 주소가 필요하면 빌드 전에 `VITE_WORKER_URL`을 설정합니다.
 
@@ -142,6 +152,12 @@ Worker는 로컬 검색 전에 `agentIds`를 필터링하고, Vector Store 결�
 
 응답은 호환용 `message`와 신규 `scene`을 함께 반환합니다. `scene`에는 대화문, 감정·초상화 상태, 선택지 3개가 포함됩니다. 사용된 `evidenceIds`는 Worker가 실제 검색 결과와 대조한 뒤 citation으로 확정합니다.
 
+### 실시간 음성
+
+대화 화면에서 `음성 대화 시작`을 누르면 브라우저가 마이크 권한을 요청하고 GPT-Live와 WebRTC로 연결됩니다. 현자의 실제 답변은 기존 `/api/chat`에 client delegation하므로 텍스트 대화와 동일한 RAG·안전 검사·감정 태그를 사용합니다. 기본은 자연스러운 연속 대화이며 `현자님` 호출 방식과 누르는 동안 말하기도 선택할 수 있습니다.
+
+음성은 API로 실시간 전송되지만 녹음 파일로 저장하지 않습니다. 텍스트 자막과 대화 기록만 기존 세션에 저장됩니다. 현자별 voice와 말하기 지침은 `/developer/voices`에서 변경하며 변경 내용은 새 음성 세션부터 적용됩니다.
+
 ## Safety
 
 입력 검사, 시스템 정책, 출력 검사, 안전 대체 응답의 네 단계를 적용합니다. 자해·학대·의료·법률 등 고위험 질문에서는 인물형 회고를 멈추고 안전한 안내로 전환합니다. 교육 환경에 맞지 않는 성적·폭력적·차별적 표현은 차단하거나 중립적으로 전환합니다.
@@ -157,7 +173,7 @@ npm run build
 npm run test:e2e
 ```
 
-테스트는 구조화 응답 정규화, 선택지 보정, 제외 청크 필터, 로컬·Vector Store 검색 병합을 포함합니다. `test:e2e`는 로컬 웹과 Worker가 실행 중일 때 데스크톱·모바일 화면, 실제 응답, 선택지, 출처 서랍과 세션 복구를 검사합니다.
+테스트는 구조화 응답 정규화, 선택지 보정, 제외 청크 필터, 로컬·Vector Store 검색 병합과 음성 API의 Origin 차단, 기능 플래그, 관리자 쿠키, 장기 API 키 비노출 계약을 포함합니다. `test:e2e`는 로컬 웹과 Worker가 실행 중일 때 데스크톱·모바일 화면, 실제 응답, 선택지, 출처 서랍과 세션 복구를 검사합니다.
 
 ## Deploy
 
@@ -173,9 +189,10 @@ npx supabase db push
 npx supabase secrets set --env-file supabase/.env
 npx supabase functions deploy session-api
 npx supabase functions deploy openai-proxy
+npx supabase functions deploy voice-profile-api
 ```
 
-Cloudflare Worker에는 Supabase Function URL과 양쪽이 공유하는 프록시 Secret만 설정한 뒤 `npm run deploy`를 실행합니다. 자세한 시연·배포·장애 대응 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)에 정리되어 있습니다.
+Cloudflare Worker에는 Supabase Function URL과 양쪽이 공유하는 프록시 Secret을 설정합니다. 음성 관리자 패널을 위해 `VOICE_ADMIN_PASSWORD`, `VOICE_ADMIN_SESSION_SECRET`도 Wrangler Secret으로 등록한 뒤 `npm run deploy`를 실행합니다. 자세한 시연·배포·장애 대응 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)에 정리되어 있습니다.
 
 GitHub Pages는 정적 프론트 대안으로만 지원합니다. 이 경우 `VITE_WORKER_URL`을 공개 Worker 주소로 지정하고, Worker의 `ALLOWED_ORIGIN`에 GitHub Pages Origin을 설정해야 합니다.
 

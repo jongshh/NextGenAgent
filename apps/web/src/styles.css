@@ -1515,3 +1515,84 @@ a:focus-visible {
     bottom: 10px;
   }
 }
+
+.voice-control {
+  width: min(760px, calc(100% - 24px));
+  margin: 10px auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(241, 184, 75, 0.3);
+  border-radius: 14px;
+  background: rgba(19, 27, 24, 0.92);
+  color: #f5f1e8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.voice-control-row,
+.voice-control-row button,
+.voice-status,
+.push-to-talk,
+.voice-captions strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.voice-control-row { justify-content: center; }
+.voice-control button,
+.voice-control select {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  padding: 7px 10px;
+}
+.voice-control select option { color: #18221d; }
+.voice-primary { background: #e6b657 !important; color: #172019 !important; font-weight: 700; }
+.voice-status { flex: 1; font-size: 0.86rem; }
+.voice-status i { width: 9px; height: 9px; border-radius: 50%; background: #65d49b; box-shadow: 0 0 10px rgba(101, 212, 155, 0.7); }
+.voice-user-speaking .voice-status i { background: #f1b84b; }
+.voice-mentor-speaking .voice-status i { background: #78b8ee; }
+.push-to-talk { justify-content: center; width: 100%; margin-top: 9px; background: rgba(241, 184, 75, 0.15) !important; }
+.voice-captions { margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.1); }
+.voice-captions p { display: grid; grid-template-columns: 62px 1fr; gap: 8px; margin: 4px 0; font-size: .88rem; }
+.voice-captions strong { color: #e8c77f; }
+.voice-control small { display: block; margin-top: 7px; color: rgba(245,241,232,.64); text-align: center; }
+.voice-error { margin: 8px 0 0; color: #f2a98a; text-align: center; font-size: .84rem; }
+
+.voice-admin-shell { min-height: 100svh; padding: 42px max(24px, calc((100vw - 1180px) / 2)); background: #101713; color: #f4efe4; }
+.voice-admin-login { width: min(440px, 100%); margin: 12vh auto 0; padding: 32px; border: 1px solid rgba(255,255,255,.13); border-radius: 20px; background: #19231e; text-align: center; }
+.voice-admin-login h1 { margin: 12px 0 6px; }
+.voice-admin-login input { width: 100%; margin: 22px 0 10px; }
+.voice-admin-login button { width: 100%; }
+.voice-admin-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+.voice-admin-header span { color: #e6b657; font-size: .72rem; letter-spacing: .16em; }
+.voice-admin-header h1 { margin: 4px 0 0; }
+.voice-admin-header button,
+.voice-profile-card button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.voice-admin-disclosure,
+.voice-admin-message { padding: 12px 15px; border-radius: 10px; background: rgba(255,255,255,.06); }
+.voice-admin-message { color: #e8c77f; }
+.voice-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.voice-profile-card { padding: 22px; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; background: #19231e; }
+.voice-profile-card > header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px; }
+.voice-profile-card h2 { margin: 3px 0 0; }
+.voice-profile-card small { color: #e6b657; }
+.voice-profile-card label { display: grid; gap: 6px; margin-top: 12px; color: rgba(244,239,228,.78); font-size: .82rem; }
+.voice-profile-card header label { display: flex; grid-auto-flow: column; align-items: center; margin: 0; }
+.voice-profile-card input:not([type="checkbox"]),
+.voice-profile-card select,
+.voice-profile-card textarea,
+.voice-admin-login input { border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: #101713; color: #f4efe4; padding: 10px; font: inherit; }
+.voice-profile-card footer { display: flex; justify-content: end; gap: 8px; margin-top: 18px; }
+.voice-profile-card button,
+.voice-admin-login button,
+.voice-admin-header button { border: 0; border-radius: 8px; background: #e6b657; color: #182019; padding: 10px 14px; font-weight: 700; }
+.voice-profile-card button.secondary,
+.voice-admin-header button { background: rgba(255,255,255,.09); color: #f4efe4; }
+
+@media (max-width: 760px) {
+  .voice-control-row { flex-wrap: wrap; }
+  .voice-profile-grid { grid-template-columns: 1fr; }
+  .voice-admin-shell { padding: 24px 14px; }
+}

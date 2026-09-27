@@ -71,7 +71,14 @@ export interface ConversationTurn {
   insufficientEvidence?: boolean;
   citations?: Citation[];
   safetyStatus?: "allowed" | "redirected" | "blocked";
+  inputMode?: "text" | "voice";
+  deliveryStatus?: "completed" | "interrupted";
+  spokenText?: string;
 }
+
+export type VoiceState = "idle" | "permission" | "connecting" | "listening" |
+  "user-speaking" | "thinking" | "mentor-speaking" | "interrupted" | "error";
+export type VoiceActivationMode = "tap_vad" | "wake_prefix" | "push_to_talk";
 
 export interface ConversationSession {
   id: string;

@@ -86,18 +86,30 @@ async function handleHue(request, response, url) {
 
 async function proxyApi(request, response, url) {
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request, 1_000_000);
+  const upstreamOrigin = new URL(upstreamUrl).origin;
   const upstream = await fetch(`${upstreamUrl}${url.pathname}${url.search}`, {
     method: request.method,
     headers: {
       Accept: request.headers.accept || "application/json",
-      ...(request.headers["content-type"] ? { "Content-Type": request.headers["content-type"] } : {})
+      Origin: upstreamOrigin,
+      ...(request.headers["content-type"] ? { "Content-Type": request.headers["content-type"] } : {}),
+      ...(request.headers.cookie ? { Cookie: request.headers.cookie } : {})
     },
     body
   });
-  response.writeHead(upstream.status, {
+  const headers = {
     "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
     "Cache-Control": "no-store"
-  });
+  };
+  const setCookies = typeof upstream.headers.getSetCookie === "function"
+    ? upstream.headers.getSetCookie()
+    : [upstream.headers.get("set-cookie")].filter(Boolean);
+  if (setCookies.length > 0) {
+    // The companion is bound to local HTTP only. Preserve HttpOnly/SameSite while
+    // removing Secure so the upstream admin session cookie can be stored locally.
+    headers["Set-Cookie"] = setCookies.map((cookie) => cookie.replace(/;\s*Secure/gi, ""));
+  }
+  response.writeHead(upstream.status, headers);
   if (!upstream.body) return response.end();
   Readable.fromWeb(upstream.body).pipe(response);
 }

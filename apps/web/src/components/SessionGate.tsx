@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight, KeyRound, ShieldCheck } from "lucide-react";
+import { PARTICIPANT_ID_PATTERN } from "../session-id";
 
 interface SessionGateProps {
   isLoading: boolean;
@@ -45,7 +46,7 @@ export function SessionGate({ isLoading, errorMessage, onContinue }: SessionGate
               onChange={(event) => setParticipantId(event.target.value)}
               minLength={4}
               maxLength={32}
-              pattern="[A-Za-z0-9가-힣_-]{4,32}"
+              pattern={PARTICIPANT_ID_PATTERN}
               autoComplete="username"
               autoCapitalize="none"
               placeholder="예: dream2026"

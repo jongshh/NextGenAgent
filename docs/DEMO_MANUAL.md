@@ -25,6 +25,8 @@ Supabase 프로젝트: `NextGenAgent` (`wfyghzowxusawsztprqh`, 서울 리전)
 
 개발 및 다른 PC에서 빠르게 테스트하려면 프로젝트 루트의 `start-test-web.bat`를 더블클릭합니다. 일반 웹 테스트와 Hue 포함 테스트 중 하나를 선택할 수 있으며, 필요한 로컬 서버와 브라우저가 자동으로 열립니다. 다른 PC에서 `.dev.vars`가 없으면 예제 파일을 복사해 메모장으로 열어주므로 OpenAI 설정값을 입력한 뒤 다시 실행합니다.
 
+음성 기능을 집중적으로 확인할 때는 `start-voice-test.bat`를 더블클릭합니다. 실행기는 실제 키 값을 출력하지 않고 `OPENAI_API_KEY`, `VOICE_ENABLED`, 관리자 암호와 서명 Secret의 설정 여부만 검사합니다. 검사가 끝나면 대화 화면과 `/developer/voices`가 함께 열립니다.
+
 - 배포 주소를 노트북과 모바일 데이터 환경에서 각각 한 번 엽니다.
 - 새 ID로 대화를 시작하고 질문을 한 번 보냅니다.
 - 시크릿 창 또는 다른 기기에서 같은 ID를 입력해 대화가 복구되는지 확인합니다.
@@ -108,7 +110,30 @@ NEXTGEN_PROXY_SECRET=<충분히 긴 임의 문자열>
 npx supabase secrets set --env-file supabase/.env
 npx supabase functions deploy session-api
 npx supabase functions deploy openai-proxy
+npx supabase functions deploy voice-profile-api
 ```
+
+## 실시간 음성 대화
+
+음성 대화는 Chrome 또는 Edge의 최신 버전에서 HTTPS 배포 주소나 localhost로 접속해 테스트합니다. 대화 화면에서 `음성 대화 시작`을 누르고 마이크 권한을 허용합니다.
+
+1. `음성 연결됨`이 표시되면 자연스럽게 말합니다.
+2. 사용자 자막이 나타나고 기존 현자 답변이 화면과 합성 음성으로 한 번씩 출력되는지 확인합니다.
+3. 현자가 말하는 도중 다시 말해 음성이 중단되고 Hue가 원래 상태로 복원되는지 확인합니다.
+4. `현자님 호출`에서는 “현자님, 진로가 고민돼요”처럼 말하고, 접두사가 없는 주변 대화에는 답하지 않는지 확인합니다.
+5. `누르는 동안 말하기`에서는 화면 버튼 또는 Space 키를 누른 동안만 말합니다.
+
+원본 음성은 저장하지 않으며 자막과 텍스트 대화만 세션에 남습니다. 음성 연결이 실패해도 텍스트 입력은 계속 사용할 수 있습니다.
+
+현자별 음성은 `/developer/voices`에서 조절합니다. Worker에 다음 Secret을 등록해야 합니다.
+
+```powershell
+cd apps/worker
+npx wrangler secret put VOICE_ADMIN_PASSWORD
+npx wrangler secret put VOICE_ADMIN_SESSION_SECRET
+```
+
+관리자 패널에서 voice, 모델, 말하기 지침, 기본 인식 방식, 응답 민감도를 수정하고 미리 듣기 후 저장합니다. 설정 변경은 이미 재생 중인 세션을 바꾸지 않으며 새 음성 세션부터 적용됩니다. 사용자가 듣는 목소리는 AI 합성 음성임을 현장에서 안내합니다.
 
 ## Cloudflare 연결 및 배포
 

@@ -5,7 +5,7 @@ Deno.serve(async (request) => {
   if (!isTrustedProxy(request)) return json({ error: "unauthorized" }, 401);
 
   const body = await request.json().catch(() => null) as {
-    operation?: "moderations" | "vector_search" | "responses";
+    operation?: "moderations" | "vector_search" | "responses" | "live_session";
     payload?: Record<string, unknown>;
   } | null;
   if (!body?.operation || !body.payload) return json({ error: "invalid_request" }, 400);
@@ -22,17 +22,26 @@ Deno.serve(async (request) => {
     const vectorStoreId = Deno.env.get("OPENAI_VECTOR_STORE_ID");
     if (!vectorStoreId) return json({ error: "vector_store_not_configured" }, 500);
     endpoint = `https://api.openai.com/v1/vector_stores/${encodeURIComponent(vectorStoreId)}/search`;
+  } else if (body.operation === "live_session") {
+    endpoint = "https://api.openai.com/v1/live/sessions";
   } else {
     return json({ error: "operation_not_allowed" }, 400);
   }
 
+  const safetyIdentifier = typeof body.payload.safetyIdentifier === "string"
+    ? body.payload.safetyIdentifier
+    : null;
+  const upstreamPayload = body.operation === "live_session"
+    ? { session: body.payload.session, transport: body.payload.transport }
+    : body.payload;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(safetyIdentifier ? { "OpenAI-Safety-Identifier": safetyIdentifier } : {})
     },
-    body: JSON.stringify(body.payload)
+    body: JSON.stringify(upstreamPayload)
   });
   const responseBody = await response.text();
   return new Response(responseBody, {

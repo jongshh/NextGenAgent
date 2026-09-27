@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentConfig } from "@nextgen/agents";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -33,6 +33,7 @@ interface ConversationStageBProps {
   onRetry: () => void;
   onReset: () => void;
   onBack: () => void;
+  voiceControl?: ReactNode;
 }
 
 export function ConversationStageB({
@@ -48,7 +49,8 @@ export function ConversationStageB({
   onSend,
   onRetry,
   onReset,
-  onBack
+  onBack,
+  voiceControl
 }: ConversationStageBProps) {
   const [animatedTurnId, setAnimatedTurnId] = useState<string | null>(null);
   const [revealedSentenceCount, setRevealedSentenceCount] = useState(0);
@@ -254,6 +256,7 @@ export function ConversationStageB({
         </div>
       </section>
 
+      {voiceControl}
       <form
         className="conversation-b-composer"
         onSubmit={(event) => {

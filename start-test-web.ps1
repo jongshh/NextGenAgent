@@ -1,6 +1,7 @@
-param(
+﻿param(
   [ValidateSet("Web", "Hue")]
   [string]$Mode,
+  [switch]$Voice,
   [switch]$Check
 )
 
@@ -18,6 +19,16 @@ function Invoke-Npm {
   param([string[]]$Arguments, [string]$FailureMessage)
   & npm.cmd @Arguments
   if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
+}
+
+function Get-DotEnvValue {
+  param([string]$Path, [string]$Name)
+  $escapedName = [Regex]::Escape($Name)
+  $line = Get-Content -LiteralPath $Path | Where-Object {
+    $_ -match "^\s*$escapedName\s*="
+  } | Select-Object -Last 1
+  if ($null -eq $line) { return "" }
+  return (($line -split "=", 2)[1]).Trim()
 }
 
 function Test-Url {
@@ -66,6 +77,9 @@ try {
   Write-Host ""
   Write-Host "로컬 Worker와 테스트용 웹을 자동으로 준비하고 브라우저를 엽니다."
   Write-Host "Hue 장비가 없는 PC에서도 일반 웹 모드는 사용할 수 있습니다."
+  if ($Voice) {
+    Write-Host "음성 준비 모드: 설정 검사 후 대화 화면과 개발자 음성 패널을 함께 엽니다." -ForegroundColor Yellow
+  }
 
   Write-Step 1 5 "실행 환경을 확인합니다"
   if (-not (Get-Command node -ErrorAction SilentlyContinue) -or
@@ -111,6 +125,38 @@ try {
     exit 1
   }
 
+  if ($Voice) {
+    $devVarsPath = "apps/worker/.dev.vars"
+    $openAiKey = Get-DotEnvValue -Path $devVarsPath -Name "OPENAI_API_KEY"
+    $voiceEnabled = Get-DotEnvValue -Path $devVarsPath -Name "VOICE_ENABLED"
+    $adminPassword = Get-DotEnvValue -Path $devVarsPath -Name "VOICE_ADMIN_PASSWORD"
+    $adminSecret = Get-DotEnvValue -Path $devVarsPath -Name "VOICE_ADMIN_SESSION_SECRET"
+    $configurationErrors = @()
+    if ([string]::IsNullOrWhiteSpace($openAiKey) -or $openAiKey -match "your-key|replace") {
+      $configurationErrors += "OPENAI_API_KEY에 실제 서버용 API 키를 입력하세요."
+    }
+    if ($voiceEnabled.ToLowerInvariant() -ne "true") {
+      $configurationErrors += "VOICE_ENABLED=true로 설정하세요."
+    }
+    if ($adminPassword.Length -lt 12 -or $adminPassword -match "replace-with") {
+      $configurationErrors += "VOICE_ADMIN_PASSWORD를 12자 이상의 실제 암호로 바꾸세요."
+    }
+    if ($adminSecret.Length -lt 32 -or $adminSecret -match "replace-with") {
+      $configurationErrors += "VOICE_ADMIN_SESSION_SECRET을 32자 이상의 임의 문자열로 바꾸세요."
+    }
+    if ($configurationErrors.Count -gt 0) {
+      Write-Host ""
+      Write-Host "음성 테스트 설정을 먼저 완료해야 합니다:" -ForegroundColor Yellow
+      foreach ($configurationError in $configurationErrors) {
+        Write-Host "  - $configurationError"
+      }
+      Write-Host "  파일: $devVarsPath"
+      Start-Process -FilePath "notepad.exe" -ArgumentList (Resolve-Path $devVarsPath)
+      exit 1
+    }
+    Write-Host "  음성 API 및 관리자 설정 확인 완료" -ForegroundColor Green
+  }
+
   Write-Step 2 5 "프로젝트 패키지를 준비합니다"
   Invoke-Npm -Arguments @("install", "--no-audit", "--no-fund") `
     -FailureMessage "npm 패키지 설치에 실패했습니다. 인터넷 연결과 npm 오류를 확인해 주세요."
@@ -152,8 +198,15 @@ try {
 
   Write-Step 5 5 "브라우저를 엽니다"
   Start-Process $testUrl
+  if ($Voice) {
+    Start-Process "$testUrl/developer/voices"
+  }
   Write-Host ""
   Write-Host "테스트 환경 준비 완료: $testUrl" -ForegroundColor Green
+  if ($Voice) {
+    Write-Host "대화 화면과 개발자 음성 패널을 열었습니다." -ForegroundColor Green
+    Write-Host "마이크 권한을 허용한 뒤 '음성 대화 시작'을 누르세요."
+  }
   if ($Mode -eq "Hue") {
     Write-Host "오른쪽 아래에 '조명 연결됨'이 표시되는지 확인하세요."
   }
