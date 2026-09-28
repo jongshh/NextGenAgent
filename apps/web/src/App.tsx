@@ -100,6 +100,7 @@ export default function App() {
   const [voiceAssistantTranscript, setVoiceAssistantTranscript] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceAdapterRef = useRef<VoiceSessionAdapter | null>(null);
+  const voiceHuePlayRef = useRef(new Map<string, Promise<boolean>>());
   const sessionRef = useRef(session);
   const hueEnabledRef = useRef(hueEnabled);
   const loadingRef = useRef(false);
@@ -332,15 +333,27 @@ export default function App() {
       onDelegation: (text, id) => sendMessage(text, true, "voice", id),
       onPlaybackStart: (result) => {
         if (!result.lightCue) return;
-        void playAssistantOutput(agentId, result.responseId, result.lightCue, hueEnabledRef.current);
+        const playRequest = playAssistantOutput(
+          agentId,
+          result.responseId,
+          result.lightCue,
+          hueEnabledRef.current,
+          "voice"
+        );
+        voiceHuePlayRef.current.set(result.responseId, playRequest);
+        void playRequest.then(async (played) => {
+          if (!isHueCompanionHost() || !hueEnabledRef.current) return;
+          if (!played) setHueState(await readHueStatus(hueEnabledRef.current));
+          else setHueState("connected");
+        });
       },
-      onPlaybackEnd: (_result, spokenText) => {
+      onPlaybackEnd: (result, spokenText) => {
         if (spokenText) markLatestVoiceDelivery("completed", spokenText);
-        if (isHueCompanionHost()) void stopHueEffects();
+        void stopVoiceHueEffect(result);
       },
-      onInterrupted: (_result, spokenText) => {
+      onInterrupted: (result, spokenText) => {
         markLatestVoiceDelivery("interrupted", spokenText);
-        if (isHueCompanionHost()) void stopHueEffects();
+        if (result) void stopVoiceHueEffect(result);
       },
       onError: setVoiceError
     });
@@ -362,7 +375,15 @@ export default function App() {
     setVoiceMuted(false);
     setVoiceUserTranscript("");
     setVoiceAssistantTranscript("");
+    voiceHuePlayRef.current.clear();
     if (isHueCompanionHost()) await stopHueEffects();
+  }
+
+  async function stopVoiceHueEffect(result: MentorVoiceResult) {
+    const pending = voiceHuePlayRef.current.get(result.responseId);
+    voiceHuePlayRef.current.delete(result.responseId);
+    if (pending) await pending.catch(() => false);
+    if (isHueCompanionHost()) await stopHueEffects(result.responseId);
   }
 
   function markLatestVoiceDelivery(status: "completed" | "interrupted", spokenText: string) {

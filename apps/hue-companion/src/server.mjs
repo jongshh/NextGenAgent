@@ -77,7 +77,9 @@ async function handleHue(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/hue/stop") {
-    await hueController?.stop();
+    const responseId = url.searchParams.get("responseId");
+    if (responseId && responseId.length > 160) return sendJson(response, 400, { error: "invalid_response_id" });
+    await hueController?.stop(responseId || undefined);
     return sendJson(response, 200, { ok: true });
   }
 

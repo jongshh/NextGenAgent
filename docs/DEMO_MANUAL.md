@@ -27,6 +27,8 @@ Supabase 프로젝트: `NextGenAgent` (`wfyghzowxusawsztprqh`, 서울 리전)
 
 음성 기능을 집중적으로 확인할 때는 `start-voice-test.bat`를 더블클릭합니다. 실행기는 실제 키 값을 출력하지 않고 `OPENAI_API_KEY`, `VOICE_ENABLED`, 관리자 암호와 서명 Secret의 설정 여부만 검사합니다. 검사가 끝나면 대화 화면과 `/developer/voices`가 함께 열립니다.
 
+음성과 Hue를 통합 테스트할 때는 Hue 설정을 완료한 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 이 실행기는 로컬 Worker, 빌드된 웹앱, Hue Companion을 함께 실행하고 `http://127.0.0.1:4173`을 엽니다.
+
 - 배포 주소를 노트북과 모바일 데이터 환경에서 각각 한 번 엽니다.
 - 새 ID로 대화를 시작하고 질문을 한 번 보냅니다.
 - 시크릿 창 또는 다른 기기에서 같은 ID를 입력해 대화가 복구되는지 확인합니다.

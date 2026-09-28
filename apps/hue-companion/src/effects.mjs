@@ -18,6 +18,8 @@ const PATTERN_FACTORS = {
 };
 
 const BASE_BRIGHTNESS = { low: 35, gentle: 62, standard: 78 };
+const PLAYBACK_MODES = new Set(["timed", "voice"]);
+const MAX_VOICE_EFFECT_MS = 60_000;
 const AGENT_IDS = new Set(["pathfinder", "creator", "thinker", "connector"]);
 const EMOTIONS = new Set(Object.keys(EMOTION_COLORS));
 const INTENTS = new Set(Object.keys(PATTERN_FACTORS));
@@ -29,14 +31,17 @@ export function validatePlayRequest(value) {
 
   const match = /^([a-z]+)-([a-z]+)$/.exec(value.cue.preset || "");
   const durationMs = Number(value.cue.durationMs);
+  const playbackMode = value.playbackMode || "timed";
   if (!match || !EMOTIONS.has(match[1]) || !INTENTS.has(match[2]) ||
       !["low", "gentle", "standard"].includes(value.cue.intensity) ||
+      !PLAYBACK_MODES.has(playbackMode) ||
       !Number.isInteger(durationMs) || durationMs < 3000 || durationMs > 8000) return null;
 
   return {
     agentId: value.agentId,
     responseId: value.responseId,
     cue: { preset: value.cue.preset, durationMs, intensity: value.cue.intensity },
+    playbackMode,
     emotion: match[1],
     intent: match[2]
   };
@@ -60,21 +65,23 @@ export class HueEffectController {
     if (!resourceId) throw new Error("선배에 매핑된 Hue 전구가 없습니다.");
     const original = await this.client.getLight(resourceId);
     const controller = new AbortController();
-    const effect = { resourceId, original, controller, promise: null };
+    const effect = { resourceId, responseId: request.responseId, original, controller, promise: null };
     this.current = effect;
     effect.promise = this.run(effect, request).finally(() => {
       if (this.current === effect) this.current = null;
     });
   }
 
-  async stop() {
+  async stop(responseId) {
     if (!this.current) return;
+    if (responseId && this.current.responseId !== responseId) return;
     const active = this.current;
     active.controller.abort();
     await active.promise;
   }
 
   async run(effect, request) {
+    const startedAt = Date.now();
     const [, intent] = request.cue.preset.split("-");
     const [emotion] = request.cue.preset.split("-");
     const factors = PATTERN_FACTORS[intent];
@@ -92,6 +99,10 @@ export class HueEffectController {
           dynamics: { duration: transitionMs }
         });
         await abortableDelay(intent === "ground" ? request.cue.durationMs : stageMs, effect.controller.signal);
+      }
+      if (request.playbackMode === "voice" && !effect.controller.signal.aborted) {
+        const remaining = Math.max(0, MAX_VOICE_EFFECT_MS - (Date.now() - startedAt));
+        await abortableDelay(remaining, effect.controller.signal);
       }
     } finally {
       await this.restore(effect.resourceId, effect.original).catch((error) => {

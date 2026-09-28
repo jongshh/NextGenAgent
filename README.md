@@ -109,6 +109,8 @@ Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 �
 
 음성 기능만 빠르게 확인하려면 `start-voice-test.bat`를 더블클릭합니다. `.dev.vars`의 음성 필수 설정을 검사한 뒤 로컬 Worker와 웹을 실행하고, 일반 대화 화면과 `/developer/voices`를 함께 엽니다. 키나 암호 값은 화면에 출력하지 않습니다.
 
+음성과 실제 Hue 조명을 함께 확인하려면 Hue 설정을 마친 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 현자의 음성이 실제로 재생되기 시작할 때 조명 효과가 켜지고, 발화 종료·끼어들기·세션 종료 시 직전 상태로 복원됩니다.
+
 웹은 기본적으로 `http://localhost:8787`의 Worker를 사용합니다. 다른 주소가 필요하면 빌드 전에 `VITE_WORKER_URL`을 설정합니다.
 
 ## RAG 검수 절차

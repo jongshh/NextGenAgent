@@ -61,7 +61,8 @@ export async function playAssistantOutput(
   agentId: AgentId,
   responseId: string,
   cue: LightCue | null | undefined,
-  enabled: boolean
+  enabled: boolean,
+  playbackMode: "timed" | "voice" = "timed"
 ): Promise<boolean> {
   if (!isHueCompanionHost() || !enabled) return false;
   if (!cue) return true;
@@ -70,7 +71,7 @@ export async function playAssistantOutput(
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId, responseId, cue })
+      body: JSON.stringify({ agentId, responseId, cue, playbackMode })
     });
     return response.ok;
   } catch {
@@ -78,10 +79,11 @@ export async function playAssistantOutput(
   }
 }
 
-export async function stopHueEffects(): Promise<void> {
+export async function stopHueEffects(responseId?: string): Promise<void> {
   if (!isHueCompanionHost()) return;
   try {
-    await fetch("/api/hue/stop", {
+    const query = responseId ? `?responseId=${encodeURIComponent(responseId)}` : "";
+    await fetch(`/api/hue/stop${query}`, {
       method: "POST",
       credentials: "same-origin"
     });

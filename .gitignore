@@ -12,6 +12,7 @@ artifacts/
 !setup-hue.bat
 !start-test-web.bat
 !start-voice-test.bat
+!start-voice-hue-test.bat
 supabase/.temp/
 supabase/functions/.env
 supabase/.env
