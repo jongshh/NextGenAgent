@@ -19,7 +19,6 @@ const PATTERN_FACTORS = {
 
 const BASE_BRIGHTNESS = { low: 35, gentle: 62, standard: 78 };
 const PLAYBACK_MODES = new Set(["timed", "voice"]);
-const MAX_VOICE_EFFECT_MS = 60_000;
 const AGENT_IDS = new Set(["pathfinder", "creator", "thinker", "connector"]);
 const EMOTIONS = new Set(Object.keys(EMOTION_COLORS));
 const INTENTS = new Set(Object.keys(PATTERN_FACTORS));
@@ -52,6 +51,7 @@ export class HueEffectController {
     this.client = client;
     this.targets = targets;
     this.current = null;
+    this.baselines = new Map();
   }
 
   async status() {
@@ -60,28 +60,62 @@ export class HueEffectController {
   }
 
   async play(request) {
-    await this.stop();
+    await this.stop(undefined, false);
     const resourceId = this.targets[request.agentId];
     if (!resourceId) throw new Error("선배에 매핑된 Hue 전구가 없습니다.");
     const original = await this.client.getLight(resourceId);
+    if (!this.baselines.has(resourceId)) this.baselines.set(resourceId, original);
     const controller = new AbortController();
-    const effect = { resourceId, responseId: request.responseId, original, controller, promise: null };
+    const effect = {
+      resourceId,
+      responseId: request.responseId,
+      original,
+      controller,
+      restoreOnStop: request.playbackMode === "timed",
+      promise: null
+    };
     this.current = effect;
-    effect.promise = this.run(effect, request).finally(() => {
-      if (this.current === effect) this.current = null;
-    });
+    effect.promise = this.run(effect, request)
+      .catch((error) => {
+        console.error(JSON.stringify({
+          message: "Hue 효과 실행 실패",
+          responseId: effect.responseId,
+          resourceId: effect.resourceId,
+          error: error instanceof Error ? error.message : String(error)
+        }));
+      })
+      .finally(() => {
+        if (this.current === effect) this.current = null;
+      });
   }
 
-  async stop(responseId) {
+  async stop(responseId, restore = true) {
     if (!this.current) return;
     if (responseId && this.current.responseId !== responseId) return;
     const active = this.current;
+    active.restoreOnStop = restore;
     active.controller.abort();
     await active.promise;
   }
 
+  async reset() {
+    await this.stop(undefined, false);
+    const baselines = [...this.baselines.entries()];
+    this.baselines.clear();
+    await Promise.all(baselines.map(async ([resourceId, light]) => {
+      try {
+        await this.restore(resourceId, light);
+      } catch (error) {
+        console.error(JSON.stringify({
+          message: "Hue 기준 상태 복원 실패",
+          resourceId,
+          error: error instanceof Error ? error.message : String(error)
+        }));
+      }
+    }));
+  }
+
   async run(effect, request) {
-    const startedAt = Date.now();
     const [, intent] = request.cue.preset.split("-");
     const [emotion] = request.cue.preset.split("-");
     const factors = PATTERN_FACTORS[intent];
@@ -101,13 +135,14 @@ export class HueEffectController {
         await abortableDelay(intent === "ground" ? request.cue.durationMs : stageMs, effect.controller.signal);
       }
       if (request.playbackMode === "voice" && !effect.controller.signal.aborted) {
-        const remaining = Math.max(0, MAX_VOICE_EFFECT_MS - (Date.now() - startedAt));
-        await abortableDelay(remaining, effect.controller.signal);
+        await waitForAbort(effect.controller.signal);
       }
     } finally {
-      await this.restore(effect.resourceId, effect.original).catch((error) => {
-        console.error(JSON.stringify({ message: "Hue 상태 복원 실패", error: error.message }));
-      });
+      if (effect.restoreOnStop) {
+        await this.restore(effect.resourceId, effect.original).catch((error) => {
+          console.error(JSON.stringify({ message: "Hue 상태 복원 실패", error: error.message }));
+        });
+      }
     }
   }
 
@@ -123,6 +158,13 @@ export class HueEffectController {
     }
     await this.client.setLight(resourceId, state);
   }
+}
+
+function waitForAbort(signal) {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    signal.addEventListener("abort", resolve, { once: true });
+  });
 }
 
 function abortableDelay(ms, signal) {

@@ -103,13 +103,13 @@ npm run dev:web
 - Worker API: `http://localhost:8787`
 - Health check: `http://localhost:8787/api/health`
 
-Philips Hue를 사용하는 현장 시연은 Windows에서 `setup-hue.bat`를 더블클릭하면 자동 설치 마법사로 설정할 수 있습니다. 수동 설정은 Bridge와 같은 네트워크에서 최초 한 번 `npm run hue:setup`을 실행한 뒤 `npm run demo:hue`로 시작합니다. 네 명의 선배에 서로 다른 컬러 전구를 지정하며, 응답 효과가 끝나면 전구는 직전 상태로 복원됩니다. 자세한 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)을 참고합니다.
+Philips Hue를 사용하는 현장 시연은 Windows에서 `setup-hue.bat`를 더블클릭하면 자동 설치 마법사로 설정할 수 있습니다. 수동 설정은 Bridge와 같은 네트워크에서 최초 한 번 `npm run hue:setup`을 실행한 뒤 `npm run demo:hue`로 시작합니다. 네 명의 선배에 서로 다른 컬러 전구를 지정합니다. 텍스트 응답 효과는 종료 후 직전 상태로 복원되고, 음성 대화는 듣기·생각하기·답변 단계에 따라 전환된 뒤 마지막 답변 색을 세션 종료까지 유지합니다. 자세한 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)을 참고합니다.
 
 Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 더블클릭합니다. 일반 웹 모드는 Hue 장비 없이 Worker와 Vite 웹을 실행하고, Hue 포함 모드는 로컬 Worker와 Companion을 연결해 최신 코드로 실제 조명까지 테스트합니다.
 
 음성 기능만 빠르게 확인하려면 `start-voice-test.bat`를 더블클릭합니다. `.dev.vars`의 음성 필수 설정을 검사한 뒤 로컬 Worker와 웹을 실행하고, 일반 대화 화면과 `/developer/voices`를 함께 엽니다. 키나 암호 값은 화면에 출력하지 않습니다.
 
-음성과 실제 Hue 조명을 함께 확인하려면 Hue 설정을 마친 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 현자의 음성이 실제로 재생되기 시작할 때 조명 효과가 켜지고, 발화 종료·끼어들기·세션 종료 시 직전 상태로 복원됩니다.
+음성과 실제 Hue 조명을 함께 확인하려면 Hue 설정을 마친 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 음성을 기다리거나 사용자가 말할 때는 따뜻한 듣기 조명, 답변을 준비할 때는 보라색 호흡 조명, 현자가 말할 때는 답변 감정 조명으로 전환됩니다. 답변이 끝나면 마지막 감정 색을 유지하고, 음성 세션 종료나 조명 효과 OFF에서 세션 시작 전 상태로 복원됩니다.
 
 웹은 기본적으로 `http://localhost:8787`의 Worker를 사용합니다. 다른 주소가 필요하면 빌드 전에 `VITE_WORKER_URL`을 설정합니다.
 

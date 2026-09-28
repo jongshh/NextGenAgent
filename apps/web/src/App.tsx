@@ -36,6 +36,7 @@ import type {
   ConversationSession,
   ConversationTurn,
   ConversationUiVariant,
+  LightCue,
   SessionData,
   VoiceActivationMode,
   VoiceState
@@ -43,6 +44,11 @@ import type {
 import { OpenAiLiveAdapter, type MentorVoiceResult, type VoiceSessionAdapter } from "./voice";
 
 const workerUrl = import.meta.env.VITE_WORKER_URL || (import.meta.env.DEV ? "http://localhost:8787" : "");
+
+const VOICE_PHASE_CUES: Record<"listening" | "thinking", LightCue> = {
+  listening: { preset: "calm-empathize", durationMs: 4000, intensity: "low" },
+  thinking: { preset: "confused-reflect", durationMs: 5000, intensity: "gentle" }
+};
 
 const MENTOR_VISUALS: Record<
   AgentId,
@@ -100,7 +106,8 @@ export default function App() {
   const [voiceAssistantTranscript, setVoiceAssistantTranscript] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceAdapterRef = useRef<VoiceSessionAdapter | null>(null);
-  const voiceHuePlayRef = useRef(new Map<string, Promise<boolean>>());
+  const voiceHueCommandRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const voiceHuePhaseRef = useRef<"listening" | "thinking" | "answer" | null>(null);
   const sessionRef = useRef(session);
   const hueEnabledRef = useRef(hueEnabled);
   const loadingRef = useRef(false);
@@ -112,7 +119,10 @@ export default function App() {
 
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { hueEnabledRef.current = hueEnabled; }, [hueEnabled]);
-  useEffect(() => () => { void voiceAdapterRef.current?.stop(); }, []);
+  useEffect(() => () => {
+    void voiceAdapterRef.current?.stop();
+    void voiceHueCommandRef.current.finally(() => stopHueEffects());
+  }, []);
 
   useEffect(() => {
     if (voiceMode !== "push_to_talk" || voiceState === "idle" || voiceState === "error") return;
@@ -325,7 +335,14 @@ export default function App() {
     setVoiceError(null);
     setVoiceMuted(false);
     const adapter = new OpenAiLiveAdapter(workerUrl, agentId, sessionRef.current.id, voiceMode, {
-      onState: setVoiceState,
+      onState: (state) => {
+        setVoiceState(state);
+        if (state === "user-speaking") void playVoiceHuePhase("listening");
+        else if (state === "thinking") void playVoiceHuePhase("thinking");
+        else if (state === "listening" && voiceHuePhaseRef.current === null) {
+          void playVoiceHuePhase("listening");
+        }
+      },
       onTranscript: (speaker, text) => {
         if (speaker === "user") setVoiceUserTranscript(text);
         else setVoiceAssistantTranscript(text);
@@ -333,27 +350,14 @@ export default function App() {
       onDelegation: (text, id) => sendMessage(text, true, "voice", id),
       onPlaybackStart: (result) => {
         if (!result.lightCue) return;
-        const playRequest = playAssistantOutput(
-          agentId,
-          result.responseId,
-          result.lightCue,
-          hueEnabledRef.current,
-          "voice"
-        );
-        voiceHuePlayRef.current.set(result.responseId, playRequest);
-        void playRequest.then(async (played) => {
-          if (!isHueCompanionHost() || !hueEnabledRef.current) return;
-          if (!played) setHueState(await readHueStatus(hueEnabledRef.current));
-          else setHueState("connected");
-        });
+        voiceHuePhaseRef.current = "answer";
+        void queueVoiceHueCue(result.responseId, result.lightCue);
       },
-      onPlaybackEnd: (result, spokenText) => {
+      onPlaybackEnd: (_result, spokenText) => {
         if (spokenText) markLatestVoiceDelivery("completed", spokenText);
-        void stopVoiceHueEffect(result);
       },
-      onInterrupted: (result, spokenText) => {
+      onInterrupted: (_result, spokenText) => {
         markLatestVoiceDelivery("interrupted", spokenText);
-        if (result) void stopVoiceHueEffect(result);
       },
       onError: setVoiceError
     });
@@ -375,15 +379,31 @@ export default function App() {
     setVoiceMuted(false);
     setVoiceUserTranscript("");
     setVoiceAssistantTranscript("");
-    voiceHuePlayRef.current.clear();
+    await voiceHueCommandRef.current.catch(() => false);
+    voiceHuePhaseRef.current = null;
     if (isHueCompanionHost()) await stopHueEffects();
   }
 
-  async function stopVoiceHueEffect(result: MentorVoiceResult) {
-    const pending = voiceHuePlayRef.current.get(result.responseId);
-    voiceHuePlayRef.current.delete(result.responseId);
-    if (pending) await pending.catch(() => false);
-    if (isHueCompanionHost()) await stopHueEffects(result.responseId);
+  async function playVoiceHuePhase(phase: "listening" | "thinking") {
+    if (voiceHuePhaseRef.current === phase) return;
+    voiceHuePhaseRef.current = phase;
+    await queueVoiceHueCue(
+      `${sessionRef.current.id}-${phase}-${Date.now()}`,
+      VOICE_PHASE_CUES[phase]
+    );
+  }
+
+  function queueVoiceHueCue(responseId: string, cue: LightCue): Promise<boolean> {
+    const request = voiceHueCommandRef.current
+      .catch(() => false)
+      .then(() => playAssistantOutput(agentId, responseId, cue, hueEnabledRef.current, "voice"));
+    voiceHueCommandRef.current = request.catch(() => false);
+    void request.then(async (played) => {
+      if (!isHueCompanionHost() || !hueEnabledRef.current) return;
+      if (!played) setHueState(await readHueStatus(hueEnabledRef.current));
+      else setHueState("connected");
+    });
+    return request;
   }
 
   function markLatestVoiceDelivery(status: "completed" | "interrupted", spokenText: string) {
@@ -418,10 +438,12 @@ export default function App() {
 
   function toggleHueEffects(enabled: boolean) {
     setHueEnabled(enabled);
+    hueEnabledRef.current = enabled;
     saveHueEffectsEnabled(enabled);
     if (!enabled) {
       setHueState("disabled");
-      void stopHueEffects();
+      voiceHuePhaseRef.current = null;
+      void voiceHueCommandRef.current.finally(() => stopHueEffects());
     }
   }
 

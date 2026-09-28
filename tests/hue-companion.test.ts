@@ -64,7 +64,7 @@ test("a cancelled effect restores the exact prior light state", async () => {
   });
 });
 
-test("a voice effect remains active until playback stop restores the light", async () => {
+test("a completed voice answer holds its color until the session is reset", async () => {
   const calls: Array<Record<string, unknown>> = [];
   const original = { on: { on: true }, dimming: { brightness: 18 }, color_temperature: { mirek: 310 } };
   const client = {
@@ -89,7 +89,15 @@ test("a voice effect remains active until playback stop restores the light", asy
     color_temperature: { mirek: 310 }
   });
 
-  await controller.stop();
+  await controller.stop(undefined, false);
+  assert.notDeepEqual(calls.at(-1), {
+    on: { on: true },
+    dynamics: { duration: 700 },
+    dimming: { brightness: 18 },
+    color_temperature: { mirek: 310 }
+  });
+
+  await controller.reset();
   assert.deepEqual(calls.at(-1), {
     on: { on: true },
     dynamics: { duration: 700 },
@@ -128,4 +136,42 @@ test("stopping an older response does not cancel a newer light effect", async ()
     dynamics: { duration: 700 },
     dimming: { brightness: 20 }
   });
+});
+
+test("a bulb communication failure does not reject or wedge the controller", async () => {
+  const originalConsoleError = console.error;
+  console.error = () => undefined;
+  let attempts = 0;
+  const client = {
+    async getLight() { return { on: { on: true }, dimming: { brightness: 40 } }; },
+    async setLight() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("communication_error");
+    }
+  };
+  const controller = new HueEffectController(client, { connector: "light-4" });
+  const failed = validatePlayRequest({
+    agentId: "connector",
+    responseId: "failed-effect",
+    playbackMode: "voice",
+    cue: { preset: "calm-empathize", durationMs: 3000, intensity: "low" }
+  });
+  assert.ok(failed);
+  try {
+    await controller.play(failed);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const next = validatePlayRequest({
+      agentId: "connector",
+      responseId: "next-effect",
+      playbackMode: "voice",
+      cue: { preset: "confused-reflect", durationMs: 3000, intensity: "gentle" }
+    });
+    assert.ok(next);
+    await controller.play(next);
+    await controller.stop(undefined, false);
+    assert.ok(attempts >= 2);
+  } finally {
+    console.error = originalConsoleError;
+  }
 });

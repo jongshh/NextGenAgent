@@ -79,7 +79,8 @@ async function handleHue(request, response, url) {
   if (request.method === "POST" && url.pathname === "/api/hue/stop") {
     const responseId = url.searchParams.get("responseId");
     if (responseId && responseId.length > 160) return sendJson(response, 400, { error: "invalid_response_id" });
-    await hueController?.stop(responseId || undefined);
+    if (responseId) await hueController?.stop(responseId);
+    else await hueController?.reset();
     return sendJson(response, 200, { ok: true });
   }
 
@@ -233,7 +234,7 @@ class RequestError extends Error {
 
 async function shutdown(signal) {
   console.log(`${signal}: Hue 상태를 복원하고 종료합니다.`);
-  await hueController?.stop().catch((error) => console.error(error));
+  await hueController?.reset().catch((error) => console.error(error));
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 4000).unref();
 }
