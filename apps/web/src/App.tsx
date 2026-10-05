@@ -76,7 +76,7 @@ const MENTOR_VISUALS: Record<
     image: "/assets/mentor-connector-silhouette.png",
     number: "04",
     accent: "#d39b35",
-    promise: "기술을 사람의 언어로 잇는 선배"
+    promise: "두려움 속에서도 준비하며 나아가는 선배"
   }
 };
 

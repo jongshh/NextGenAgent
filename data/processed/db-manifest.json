@@ -1,0 +1,33 @@
+{
+  "version": "316c2bf2fd767fc81416bf8a",
+  "sources": [
+    {
+      "agentId": "pathfinder",
+      "path": "DB/길을 찾는 사람.pdf",
+      "sha256": "baa8df69be2099037980448d67dfb26e8e24f6faeda6af77565094db3dbfaccd",
+      "pages": 37,
+      "chunks": 41
+    },
+    {
+      "agentId": "creator",
+      "path": "DB/창작하는 사람.pdf",
+      "sha256": "f57c678e0448dd74e6138fc6342ad11184c9763ef3eb63f799ca5be7c639a754",
+      "pages": 68,
+      "chunks": 107
+    },
+    {
+      "agentId": "thinker",
+      "path": "DB/생각하는 사람.pdf",
+      "sha256": "8b093b7702754c1f757b8d23c8fdbba1af2116d2074e098f6806f2636290b676",
+      "pages": 55,
+      "chunks": 74
+    },
+    {
+      "agentId": "connector",
+      "path": "DB/용기있는 사람.pdf",
+      "sha256": "8bc02834c92c4e4171bc8cd6478aa88cf51a3eb630ab4647a796996f212acfa0",
+      "pages": 34,
+      "chunks": 35
+    }
+  ]
+}

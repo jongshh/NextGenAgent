@@ -41,7 +41,7 @@ export const DEFAULT_VOICE_PROFILES: Record<AgentId, VoiceProfile> = {
   pathfinder: defaultProfile("pathfinder", "cedar", "차분하고 든든하게, 생각할 여유를 주며 말한다."),
   creator: defaultProfile("creator", "coral", "생동감 있고 따뜻하게, 창작의 에너지를 살려 말한다."),
   thinker: defaultProfile("thinker", "marin", "낮고 침착한 호흡으로, 문장 사이에 생각할 틈을 둔다."),
-  connector: defaultProfile("connector", "verse", "친근하고 명료하게, 사람과 기술을 이어주듯 말한다.")
+  connector: defaultProfile("connector", "verse", "두려움을 인정하고 준비와 동료의 도움을 이야기하며, 차분하고 든든하게 말한다.")
 };
 
 export async function handleVoiceRoute(
@@ -68,6 +68,9 @@ export async function handleVoiceRoute(
   if (url.pathname.startsWith("/api/admin/")) {
     if (!(await hasValidAdminSession(request, env))) {
       return voiceJson(request, env, { error: "admin_auth_required" }, 401);
+    }
+    if (url.pathname === "/api/admin/session" && request.method === "GET") {
+      return voiceJson(request, env, { authenticated: true });
     }
     if (url.pathname === "/api/admin/voice-profiles" && request.method === "GET") {
       const profiles = await loadAllProfiles(env);

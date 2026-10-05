@@ -1,6 +1,14 @@
 import https from "node:https";
 
 export class HueClient {
+  async listLights() {
+    const response = await hueRequest({ bridgeIp: this.bridgeIp, path: '/clip/v2/resource', applicationKey: this.applicationKey, expectedFingerprint: this.certificateFingerprint });
+    ensureHueSuccess(response);
+    const resources = response.data?.data || [];
+    return resources.filter(item => item.type === 'light').map(light => ({ ...light,
+      connectivity: resources.find(item => item.type === 'zigbee_connectivity' && item.owner?.rid === light.owner?.rid)?.status || 'unknown'
+    }));
+  }
   constructor(config) {
     this.bridgeIp = config.bridgeIp;
     this.applicationKey = config.applicationKey;

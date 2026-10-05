@@ -2,6 +2,7 @@
   "name": "nextgenagent",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=22" },
   "description": "Next-Gen Super Agent for Student",
   "type": "module",
   "workspaces": [
@@ -17,10 +18,12 @@
     "typecheck": "npm --workspaces run typecheck",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "node tests/ui-smoke.mjs",
+    "test:developer": "node tests/developer-smoke.mjs",
     "deploy": "npm run build && npm --workspace @nextgen/worker run deploy",
-    "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py \"DB/꿈다락 AI 데이터베이스.pdf\" data/processed/dream-mentor.chunks.json",
-    "process:legacy-db": "python packages/rag/scripts/process_interview_pdf.py DB/Interview_DB1.pdf data/processed/interview-db1.chunks.json",
-    "upload:vector-store": "node packages/rag/scripts/upload_vector_store.mjs \"DB/꿈다락 AI 데이터베이스.pdf\""
+    "process:interview-db": "python packages/rag/scripts/process_interview_pdf.py --all .local/candidate",
+    "process:legacy-db": "python packages/rag/scripts/process_interview_pdf.py DB/old/Interview_DB1.pdf data/processed/interview-db1.chunks.json",
+    "upload:vector-store": "node packages/rag/scripts/upload_vector_store.mjs .local/candidate",
+    "diagnose": "node scripts/runtime.mjs check"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

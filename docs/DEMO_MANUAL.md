@@ -23,11 +23,21 @@ Supabase 프로젝트: `NextGenAgent` (`wfyghzowxusawsztprqh`, 서울 리전)
 
 ## 시연 전 점검
 
-개발 및 다른 PC에서 빠르게 테스트하려면 프로젝트 루트의 `start-test-web.bat`를 더블클릭합니다. 일반 웹 테스트와 Hue 포함 테스트 중 하나를 선택할 수 있으며, 필요한 로컬 서버와 브라우저가 자동으로 열립니다. 다른 PC에서 `.dev.vars`가 없으면 예제 파일을 복사해 메모장으로 열어주므로 OpenAI 설정값을 입력한 뒤 다시 실행합니다.
+프로젝트 루트의 `start_program.bat`를 실행합니다. 실행 환경, 패키지, 네 PDF의 벡터 동기화, Supabase 초기화와 로컬 서버를 순서대로 준비합니다. 최초 실행에서 안내된 `.dev.vars`의 OpenAI 키·Supabase 프로젝트 ID·관리 토큰·DB 암호를 입력하고 다시 실행합니다. 개발자 암호는 `VOICE_ADMIN_PASSWORD`에 있습니다.
 
 음성 기능을 집중적으로 확인할 때는 `start-voice-test.bat`를 더블클릭합니다. 실행기는 실제 키 값을 출력하지 않고 `OPENAI_API_KEY`, `VOICE_ENABLED`, 관리자 암호와 서명 Secret의 설정 여부만 검사합니다. 검사가 끝나면 대화 화면과 `/developer/voices`가 함께 열립니다.
 
-음성과 Hue를 통합 테스트할 때는 Hue 설정을 완료한 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 이 실행기는 로컬 Worker, 빌드된 웹앱, Hue Companion을 함께 실행하고 `http://127.0.0.1:4173`을 엽니다.
+기본 실행은 음성과 Hue를 함께 지원하며 `http://127.0.0.1:4173`과 `/developer`를 엽니다. `-Mode Web`은 자동 Hue 효과 없이 실행합니다. `start-test-web.bat`, `start-voice-test.bat`, `setup-hue.bat`는 통합 실행기의 호환 호출입니다.
+
+```powershell
+./start_program.bat -Check            # 읽기 전용 진단
+./start_program.bat -Stop             # 이 실행기가 시작한 서버만 종료
+./start_program.bat -SyncDb           # 추출·인덱싱 재확인
+./start_program.bat -RedeploySupabase # 원격 배포 강제 재확인
+./start_program.bat -RegisterHue      # 개발자 조명 탭 열기
+```
+
+서버는 숨김으로 실행하며 `logs/worker.err.log`, `logs/companion.err.log`에서 실패 원인을 확인합니다. 다른 프로그램이 포트를 점유하면 종료하지 않습니다. 재실행 시 코드 버전이 다르면 이전 서버를 `-Stop`으로 종료하세요. 자격 증명 값은 로그에 출력하지 않습니다.
 
 - 배포 주소를 노트북과 모바일 데이터 환경에서 각각 한 번 엽니다.
 - 새 ID로 대화를 시작하고 질문을 한 번 보냅니다.
@@ -42,7 +52,7 @@ Hue 연동은 Bridge와 같은 로컬 네트워크에 있는 현장 PC에서만 
 
 최초 한 번 다음 명령을 실행합니다.
 
-Windows에서는 프로젝트 루트의 `setup-hue.bat`를 더블클릭하면 PowerShell 설치 마법사가 열립니다. 명령어를 그대로 노출하지 않고 실행 환경 확인, 패키지 설치, 빌드 검사와 Hue 연결을 단계별로 안내하며, 완료 후 바로 데모를 실행하는 것도 선택할 수 있습니다. PowerShell에서 직접 `./setup-hue.ps1`을 실행해도 됩니다.
+Windows에서는 `setup-hue.bat` 또는 `start_program.bat -RegisterHue`로 개발자 조명 탭을 엽니다. 로그인 후 Bridge를 검색하거나 IP를 입력하고, 연결·버튼 인증을 누른 뒤 45초 안에 Bridge의 링크 버튼을 누릅니다. 위치 식별로 실제 전구를 확인하고 네 선배에 서로 다른 컬러 전구를 지정해 저장합니다. 기존 CLI 등록은 아래 명령으로도 사용할 수 있습니다.
 
 ```powershell
 npm run hue:setup
@@ -60,6 +70,8 @@ npm run hue:setup
 ```powershell
 npm run demo:hue
 ```
+
+개발자 조명 탭은 Bridge·전구 연결 상태, 현재 밝기·색상, 진행 중인 효과와 최근 오류를 3초 간격으로 확인합니다. 수동 ON/OFF·밝기·색상 적용은 해당 전구의 자동 효과를 중지합니다. 전구별 또는 전체 `정지·복원`으로 조작 전 상태를 복원합니다. 조명 설정은 재시작 없이 적용되며, 연결되지 않은 전구의 기존 지정도 확인할 수 있습니다. 영구 제어 이력은 저장하지 않습니다.
 
 화면 오른쪽 아래 상태는 다음 의미입니다.
 
@@ -83,6 +95,10 @@ npm run demo:hue
 - 로그인 계정이 아니므로 여러 기기에서 동시에 수정하면 마지막 저장 내용이 우선합니다.
 
 ## Supabase 최초 연결
+
+통합 실행기는 `.dev.vars`의 `SUPABASE_PROJECT_REF`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`로 연결하고 미적용 마이그레이션, 함수 비밀 설정, `session-api`, `openai-proxy`, `voice-profile-api`를 배포합니다. 변경이 없으면 배포를 생략하고 연결만 검증합니다. 진단용 `diag-<project-ref>` 참여 ID에 빈 세션을 저장·조회하고 음성 프로필과 벡터 프록시도 확인합니다.
+
+`OPENAI_API_KEY`, `OPENAI_VECTOR_STORE_ID`, `OPENAI_DB_VERSION`, `NEXTGEN_PROXY_SECRET`만 함수 비밀값으로 전송합니다. Supabase 관리 토큰·DB 암호는 Worker와 브라우저에 전달하지 않습니다. 새 자료 버전의 공개 서비스 적용은 별도의 Cloudflare 배포가 필요합니다. 이전 공개 Worker의 필터 없는 검색은 보존된 예전 자료(`source=dream-mentor-db`)만 검색하는 호환 경로를 사용합니다. 새 Worker를 배포하면 선배·자료 버전 필터로 새 자료를 검색합니다.
 
 전용 Supabase 프로젝트를 만든 뒤 프로젝트 루트에서 실행합니다.
 

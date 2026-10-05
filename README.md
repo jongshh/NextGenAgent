@@ -9,7 +9,7 @@
 | 길을 찾는 사람 | 나는 무엇을 선택해야 할까? | 활성화 |
 | 창작하는 사람 | 계속 창작할 수 있을까? | 활성화 |
 | 생각하는 사람 | 어떻게 살아야 할까? | 활성화 |
-| 연결하는 사람 | 사람과 기술은 어떻게 연결되는가? | 활성화 |
+| 용기있는 사람 | 두려워도 한 걸음 나아갈 수 있을까? | 활성화 |
 
 ## 사용자 경험
 
@@ -52,7 +52,8 @@ packages/agents          4개 선배 설정과 공통 상담 정책
 packages/rag             정규화 스키마, 로컬 검색, 검색 결과 병합
 apps/hue-companion       현장 PC 전용 Hue Bridge 제어 및 웹/API 프록시
 data/processed           PDF에서 추출한 검수용 JSON
-DB/꿈다락 AI 데이터베이스.pdf  4개 역할, 20명, 141페이지 원본 자료
+DB/*.pdf                 4개 역할별 PDF, 총 24명
+DB/old                   이전 자료 (자동 처리 제외)
 Storygator               참고 자료이며 빌드에는 포함되지 않음
 ```
 
@@ -70,7 +71,25 @@ Storygator               참고 자료이며 빌드에는 포함되지 않음
 
 ## Local Setup
 
-Node.js 20 이상과 Python 3이 필요합니다.
+Windows에서는 `start_program.bat`가 공식 실행 진입점입니다. Node.js 22 이상과 Python 3.10 이상을 확인하고, 없으면 공식 배포본을 사용자 범위로 준비합니다. PowerShell 5.1 이상과 인터넷 연결이 필요합니다.
+
+최초 실행에서 `apps/worker/.dev.vars`의 누락 항목을 추가합니다. `OPENAI_API_KEY`, `SUPABASE_PROJECT_REF`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`를 입력하고 다시 실행하세요. 기존 프록시 비밀값이 있으면 `NEXTGEN_PROXY_SECRET`에 입력합니다. 개발자 암호와 서명 비밀값은 미설정 시 자동 생성되며 암호는 이 파일에서 확인할 수 있습니다. 관리 토큰과 DB 암호는 로컬 설치·원격 배포에만 사용됩니다.
+
+```powershell
+./start_program.bat
+./start_program.bat -Check
+./start_program.bat -Stop
+./start_program.bat -Mode Web
+./start_program.bat -SyncDb
+./start_program.bat -RedeploySupabase
+./start_program.bat -RegisterHue
+```
+
+기본 실행은 패키지 준비 → 변경 DB 추출·벡터 업로드 → Supabase 마이그레이션·비밀 설정·함수 배포·연결 검증 → 웹 빌드 → 로컬 서버 시작 순서입니다. 대화 화면과 `/developer`를 `http://127.0.0.1:4173`에서 엽니다. 서버는 숨김으로 실행되며 출력은 `logs/`, 실행 기록과 설치 상태는 Git에서 제외되는 `.local/`에 저장합니다. 같은 프로젝트·버전의 서버만 재사용합니다. 이전 버전이 포트를 점유하면 `-Stop` 후 재실행하세요.
+
+`-Check`는 설치·업로드·배포 없이 설정, 자료 해시, 벡터 스토어 접근, Hue 연결과 포트를 진단합니다. `-Mode Web`은 자동 Hue 효과를 비활성화하고 동일한 빌드 웹을 제공합니다. Hue 장비가 없어도 기본 모드에서 웹·음성을 사용할 수 있습니다. Supabase 프로젝트 자체 생성과 Cloudflare 공개 배포는 자동 실행에 포함되지 않습니다.
+
+아래는 실행기를 사용하지 않는 수동 개발 절차입니다. Python에 `scripts/requirements.txt`를 설치한 뒤 실행합니다.
 
 ```powershell
 npm install
@@ -103,13 +122,13 @@ npm run dev:web
 - Worker API: `http://localhost:8787`
 - Health check: `http://localhost:8787/api/health`
 
-Philips Hue를 사용하는 현장 시연은 Windows에서 `setup-hue.bat`를 더블클릭하면 자동 설치 마법사로 설정할 수 있습니다. 수동 설정은 Bridge와 같은 네트워크에서 최초 한 번 `npm run hue:setup`을 실행한 뒤 `npm run demo:hue`로 시작합니다. 네 명의 선배에 서로 다른 컬러 전구를 지정합니다. 텍스트 응답 효과는 종료 후 직전 상태로 복원되고, 음성 대화는 듣기·생각하기·답변 단계에 따라 전환된 뒤 마지막 답변 색을 세션 종료까지 유지합니다. 자세한 절차는 [시연 및 운영 매뉴얼](docs/DEMO_MANUAL.md)을 참고합니다.
+Philips Hue는 `/developer`의 조명 등록·제어 탭에서 관리합니다. Bridge 자동 검색 또는 사설 IP 입력 → 링크 버튼 인증 → 전구 위치 식별 → 네 선배에 서로 다른 컬러 전구 지정 → 저장 순서입니다. 전구 상태와 현재 효과를 확인하고 ON/OFF·밝기·색상 변경, 효과 미리보기와 원상 복원을 할 수 있습니다. Bridge 키는 현장 PC에만 저장됩니다. `setup-hue.bat`도 같은 통합 실행기의 조명 탭을 엽니다.
 
-Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 더블클릭합니다. 일반 웹 모드는 Hue 장비 없이 Worker와 Vite 웹을 실행하고, Hue 포함 모드는 로컬 Worker와 Companion을 연결해 최신 코드로 실제 조명까지 테스트합니다.
+`start-test-web.bat`와 `start-voice-test.bat`는 통합 실행기의 웹 전용 모드를 호출하는 호환 진입점입니다.
 
 음성 기능만 빠르게 확인하려면 `start-voice-test.bat`를 더블클릭합니다. `.dev.vars`의 음성 필수 설정을 검사한 뒤 로컬 Worker와 웹을 실행하고, 일반 대화 화면과 `/developer/voices`를 함께 엽니다. 키나 암호 값은 화면에 출력하지 않습니다.
 
-음성과 실제 Hue 조명을 함께 확인하려면 Hue 설정을 마친 뒤 `start-voice-hue-test.bat`를 더블클릭합니다. 음성을 기다리거나 사용자가 말할 때는 따뜻한 듣기 조명, 답변을 준비할 때는 보라색 호흡 조명, 현자가 말할 때는 답변 감정 조명으로 전환됩니다. 답변이 끝나면 마지막 감정 색을 유지하고, 음성 세션 종료나 조명 효과 OFF에서 세션 시작 전 상태로 복원됩니다.
+음성과 실제 Hue 조명을 함께 확인하려면 `start_program.bat`를 실행합니다. 음성을 기다리거나 사용자가 말할 때는 따뜻한 듣기 조명, 답변을 준비할 때는 보라색 호흡 조명, 현자가 말할 때는 답변 감정 조명으로 전환됩니다. 답변이 끝나면 마지막 감정 색을 유지하고, 음성 세션 종료나 조명 효과 OFF에서 세션 시작 전 상태로 복원됩니다.
 
 웹은 기본적으로 `http://localhost:8787`의 Worker를 사용합니다. 다른 주소가 필요하면 빌드 전에 `VITE_WORKER_URL`을 설정합니다.
 
@@ -117,24 +136,24 @@ Windows에서 테스트 환경을 빠르게 열려면 `start-test-web.bat`를 �
 
 1. 원본 PDF를 `DB/`에 보관합니다.
 2. `npm run process:interview-db`로 정규화 청크를 생성합니다.
-3. `data/processed/dream-mentor.chunks.json`의 인물, 에이전트, 페이지, 태그와 내용을 검수합니다.
+3. `.local/candidate/dream-mentor.chunks.json`의 인물, 에이전트, 페이지, 태그와 내용을 검수합니다. 각 PDF와 역할은 `packages/rag/sources.json`에 명시합니다.
 4. 각 청크의 `reviewStatus`를 지정합니다.
    - `verified`: 원 출처까지 확인되어 답변 근거로 사용 가능
    - `needs_review`: 검색에는 쓰되 직접 인용이나 확정적 경험담에는 사용하지 않음
    - `excluded`: 검색과 프롬프트에서 완전히 제외
-5. `npm run upload:vector-store`로 현재 PDF를 OpenAI Vector Store에 업로드합니다. 같은 해시의 파일은 건너뛰고, 같은 이름의 이전 첨부는 새 인덱싱 성공 후 교체합니다.
+5. `npm run upload:vector-store`로 네 PDF를 기존 하나의 OpenAI Vector Store에 업로드합니다. 동일 버전·해시의 완료 파일은 건너뜁니다. 네 파일 모두 인덱싱이 완료된 뒤 로컬 활성 묶음을 원자적으로 교체하고, Supabase 초기화에서 원격 활성 버전을 적용합니다. 이전 첨부는 보존하되 `agent_id`·`db_version` 필터로 검색에서 제외합니다.
 6. 대표 질문으로 검색 결과, `evidenceIds`, 최종 citation을 확인합니다.
 
 `direct_quote` 표기만으로 원문이 검증된 것으로 간주하지 않습니다. `sourceTitle`, `sourceUrl`, `verifiedAt`까지 확인해야 `verified`로 승격합니다.
 
-현재 자동 추출 결과는 총 194개 청크입니다.
+현재 자동 추출 결과는 총 257개 청크입니다. 기존 검수 내용은 역할·인물·내용이 동일한 경우에만 승계합니다.
 
 | agentId | 인물 | 청크 |
 | --- | ---: | ---: |
-| `pathfinder` | 5명 | 40 |
-| `creator` | 5명 | 69 |
-| `thinker` | 5명 | 41 |
-| `connector` | 5명 | 44 |
+| `pathfinder` | 5명 | 41 |
+| `creator` | 7명 | 107 |
+| `thinker` | 7명 | 74 |
+| `connector` (용기있는 사람) | 5명 | 35 |
 
 Worker는 로컬 검색 전에 `agentIds`를 필터링하고, Vector Store 결과도 해당 역할의 로컬 청크와 일치할 때만 병합합니다. 따라서 다른 현자의 인물이 citation에 섞이지 않습니다.
 

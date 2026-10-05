@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +15,7 @@ AGENT_TITLES = {
     "창작하는 사람": "creator",
     "생각하는 사람": "thinker",
     "연결하는 사람": "connector",
+    "용기있는 사람": "connector",
 }
 
 PEOPLE_BY_AGENT = {
@@ -50,6 +52,16 @@ PEOPLE_BY_AGENT = {
 PERSON_LOOKUP = {
     agent_id: {person_name: (person_id, person_name) for person_id, person_name in people}
     for agent_id, people in PEOPLE_BY_AGENT.items()
+}
+
+# These heading pages were checked against the current four source PDFs.
+PERSON_LOOKUP["creator"].update({"반 고흐": ("vincent-van-gogh", "반 고흐"), "백희나": ("baek-hee-na", "백희나")})
+PERSON_LOOKUP["thinker"].update({"디오게네스": ("diogenes", "디오게네스"), "예수": ("jesus", "예수")})
+PERSON_LOOKUP["connector"] = {
+    name: (person_id, name) for person_id, name in [
+        ("roald-amundsen", "아문센"), ("um-hong-gil", "엄홍길"),
+        ("charles-lindbergh", "찰스 린드버그"), ("neil-armstrong", "닐 암스트롱"), ("yuri-gagarin", "유리 가가린")
+    ]
 }
 
 SECTION_PATTERNS = [
@@ -114,14 +126,16 @@ def page_label(text: str) -> str:
     return compact_for_chunk(text).strip(" .")
 
 
-def split_structured_fragments(pages: list[PageText]) -> list[PersonFragment]:
+def split_structured_fragments(pages: list[PageText], forced_agent: str | None = None) -> list[PersonFragment]:
     fragments: list[PersonFragment] = []
-    current_agent: str | None = None
+    current_agent: str | None = forced_agent
     current_person: tuple[str, str] | None = None
 
     for page in pages:
         label = page_label(page.text)
         if label in AGENT_TITLES:
+            if forced_agent and AGENT_TITLES[label] != forced_agent:
+                raise ValueError("PDF role does not match sources.json")
             current_agent = AGENT_TITLES[label]
             current_person = None
             continue
@@ -253,14 +267,14 @@ def split_page_chunks(text: str) -> list[str]:
     return [chunk for chunk in chunks if len(chunk) >= 80]
 
 
-def build_chunks(source_pdf: Path) -> list[dict]:
+def build_chunks(source_pdf: Path, agent_id: str | None = None) -> list[dict]:
     reader = PdfReader(str(source_pdf))
     pages = [
         PageText(index + 1, normalize_text(page.extract_text() or ""))
         for index, page in enumerate(reader.pages)
     ]
     is_structured = any(page_label(page.text) in AGENT_TITLES for page in pages)
-    fragments = split_structured_fragments(pages) if is_structured else split_legacy_fragments(pages)
+    fragments = split_structured_fragments(pages, agent_id) if is_structured or agent_id else split_legacy_fragments(pages)
     chunks: list[dict] = []
 
     for fragment in fragments:
@@ -269,7 +283,7 @@ def build_chunks(source_pdf: Path) -> list[dict]:
             quote_level = infer_quote_level(content)
             chunks.append(
                 {
-                    "id": f"{fragment.person_id}-p{fragment.page:03d}-{local_index:02d}",
+                    "id": f"{fragment.agent_id}-{fragment.person_id}-p{fragment.page:03d}-{local_index:02d}",
                     "personId": fragment.person_id,
                     "personName": fragment.person_name,
                     "agentIds": [fragment.agent_id],
@@ -289,6 +303,35 @@ def build_chunks(source_pdf: Path) -> list[dict]:
 
 
 def main() -> None:
+    if len(sys.argv) >= 2 and sys.argv[1] == "--all":
+        root = Path(__file__).resolve().parents[3]
+        sources = json.loads((root / "packages/rag/sources.json").read_text(encoding="utf-8"))
+        destination = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "data/processed"
+        previous_path = root / "data/processed/dream-mentor.chunks.json"
+        previous = json.loads(previous_path.read_text(encoding="utf-8")) if previous_path.exists() else []
+        reviews = {(tuple(c["agentIds"]), c["personId"], compact_for_chunk(c["content"])): c for c in previous}
+        all_chunks = []
+        manifest_sources = []
+        for source in sources:
+            pdf = root / source["path"]
+            extracted = build_chunks(pdf, source["agentId"])
+            if not extracted:
+                raise ValueError(f"No chunks extracted from {source['path']}")
+            for chunk in extracted:
+                chunk["sourceFile"] = source["path"]
+                prior = reviews.get((tuple(chunk["agentIds"]), chunk["personId"], compact_for_chunk(chunk["content"])))
+                if prior:
+                    for key in ("reviewStatus", "sourceUrl", "verifiedAt"):
+                        if key in prior: chunk[key] = prior[key]
+            all_chunks.extend(extracted)
+            manifest_sources.append({**source, "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(), "pages": len(PdfReader(pdf).pages), "chunks": len(extracted)})
+        version = hashlib.sha256(json.dumps([(s["agentId"], s["sha256"]) for s in manifest_sources], separators=(",", ":")).encode()).hexdigest()[:24]
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "dream-mentor.chunks.json").write_text(json.dumps(all_chunks, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (destination / "db-manifest.json").write_text(json.dumps({"version": version, "sources": manifest_sources}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (destination / "db-bundle.json").write_text(json.dumps({"manifest": {"version": version, "sources": manifest_sources}, "chunks": all_chunks}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Processed {len(all_chunks)} chunks from four PDFs; version {version}")
+        return
     if len(sys.argv) != 3:
         raise SystemExit("Usage: process_interview_pdf.py <source.pdf> <output.json>")
 

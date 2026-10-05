@@ -1450,7 +1450,10 @@ a:focus-visible {
   .conversation-composer {
     position: sticky;
     bottom: 0;
+    order: 1;
   }
+  .dialogue-zone { display: flex; flex-direction: column; }
+  .dialogue-zone .voice-control { order: 2; flex-shrink: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1561,6 +1564,14 @@ a:focus-visible {
 .voice-error { margin: 8px 0 0; color: #f2a98a; text-align: center; font-size: .84rem; }
 
 .voice-admin-shell { min-height: 100svh; padding: 42px max(24px, calc((100vw - 1180px) / 2)); background: #101713; color: #f4efe4; }
+.developer-tabs { display: flex; gap: 10px; margin: 18px 0; }
+.developer-tabs button { border: 1px solid #e6b657; border-radius: 8px; padding: 12px 18px; background: transparent; color: #f4efe4; cursor: pointer; }
+.developer-tabs button[aria-pressed="true"] { background: #e6b657; color: #182019; }
+.voice-profile-card button { margin: 4px 6px 4px 0; }
+.voice-profile-card input[type="color"] { width: 100%; min-height: 44px; padding: 3px; }
+.voice-profile-card input[type="range"] { width: 100%; }
+.voice-profile-card small { overflow-wrap: anywhere; }
+.hue-bridge-card { margin: 16px 0; }
 .voice-admin-login { width: min(440px, 100%); margin: 12vh auto 0; padding: 32px; border: 1px solid rgba(255,255,255,.13); border-radius: 20px; background: #19231e; text-align: center; }
 .voice-admin-login h1 { margin: 12px 0 6px; }
 .voice-admin-login input { width: 100%; margin: 22px 0 10px; }

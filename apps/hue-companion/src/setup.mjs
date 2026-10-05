@@ -8,7 +8,7 @@ const agents = [
   ["pathfinder", "길을 찾는 사람"],
   ["creator", "창작하는 사람"],
   ["thinker", "생각하는 사람"],
-  ["connector", "연결하는 사람"]
+  ["connector", "용기있는 사람"]
 ];
 
 try {

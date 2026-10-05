@@ -21,6 +21,20 @@ Deno.serve(async (request) => {
   } else if (body.operation === "vector_search") {
     const vectorStoreId = Deno.env.get("OPENAI_VECTOR_STORE_ID");
     if (!vectorStoreId) return json({ error: "vector_store_not_configured" }, 500);
+    const version = Deno.env.get("OPENAI_DB_VERSION");
+    const filters = body.payload.filters as { filters?: Array<{ key?: string; value?: string; type?: string }> } | undefined;
+    const role = filters?.filters?.find(filter => filter.key === "agent_id" && filter.type === "eq")?.value;
+    const requestedVersion = filters?.filters?.find(filter => filter.key === "db_version" && filter.type === "eq")?.value;
+    if (body.payload.filters === undefined) {
+      // Transitional compatibility for the already-deployed Worker. It can only
+      // search the archived original collection, never the four new role files.
+      body.payload.filters = { type: "eq", key: "source", value: "dream-mentor-db" };
+    } else {
+      if (!version || requestedVersion !== version || !role || !["pathfinder", "creator", "thinker", "connector"].includes(role)) return json({ error: "invalid_collection" }, 409);
+      body.payload.filters = { type: "and", filters: [
+        { type: "eq", key: "agent_id", value: role }, { type: "eq", key: "db_version", value: version }
+      ] };
+    }
     endpoint = `https://api.openai.com/v1/vector_stores/${encodeURIComponent(vectorStoreId)}/search`;
   } else if (body.operation === "live_session") {
     endpoint = "https://api.openai.com/v1/live/sessions";

@@ -5,9 +5,8 @@ import { dirname, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
-import { loadConfig, configPath } from "./config.mjs";
-import { HueClient } from "./hue-client.mjs";
-import { HueEffectController, validatePlayRequest } from "./effects.mjs";
+import { validatePlayRequest } from "./effects.mjs";
+import { HueAdmin, HueAdminError } from './admin.mjs';
 
 const host = "127.0.0.1";
 const port = Number(process.env.NEXTGEN_HUE_PORT || 4173);
@@ -19,43 +18,58 @@ const webRoot = resolve(repoRoot, "apps", "web", "dist");
 const sessionToken = randomBytes(32).toString("base64url");
 const recentResponses = new Set();
 
-let hueController = null;
-let setupError = null;
-try {
-  const config = await loadConfig();
-  hueController = new HueEffectController(new HueClient(config), config.targets);
-} catch (error) {
-  setupError = error instanceof Error ? error.message : String(error);
+const hueAdmin = new HueAdmin();
+await hueAdmin.initialize();
+let mutationQueue = Promise.resolve();
+function serialize(operation) {
+  const result = mutationQueue.then(operation);
+  mutationQueue = result.catch(() => {});
+  return result;
 }
 
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", origin);
     if (!isLocalHost(request.headers.host)) return sendJson(response, 403, { error: "invalid_host" });
+    if (url.pathname === '/internal/shutdown' && request.method === 'POST') {
+      const token = process.env.NEXTGEN_CONTROL_TOKEN;
+      if (!token || !safeEqual(request.headers.authorization || '', `Bearer ${token}`)) return sendJson(response, 403, { error: 'forbidden' });
+      await serialize(() => hueAdmin.controller?.reset());
+      sendJson(response, 200, { ok: true });
+      setTimeout(() => server.close(() => process.exit(0)), 50);
+      return;
+    }
+    if (url.pathname === '/health' && request.method === 'GET') return sendJson(response, 200, {
+      ok: true, project: 'nextgenagent', instanceId: process.env.NEXTGEN_INSTANCE_ID || null
+    });
 
     if (url.pathname.startsWith("/api/")) {
       if (!authorizeBrowserRequest(request)) return sendJson(response, 403, { error: "forbidden" });
-      if (url.pathname.startsWith("/api/hue/")) return await handleHue(request, response, url);
+      if (url.pathname.startsWith('/api/hue/admin/')) return await handleAdmin(request, response, url);
+      if (url.pathname.startsWith("/api/hue/")) return await serialize(() => handleHue(request, response, url));
       return await proxyApi(request, response, url);
     }
 
     return await serveWeb(response, url.pathname);
   } catch (error) {
     console.error(JSON.stringify({ message: "Hue Companion 요청 실패", error: error instanceof Error ? error.message : String(error) }));
-    const status = error instanceof RequestError ? error.status : 500;
-    if (!response.headersSent) sendJson(response, status, { error: error instanceof RequestError ? error.message : "internal_error" });
+    const status = error instanceof RequestError || error instanceof HueAdminError ? error.status : 500;
+    if (!response.headersSent) sendJson(response, status, { error: error instanceof RequestError || error instanceof HueAdminError ? error.message : "Bridge 연결과 서버 로그를 확인하세요." });
     else response.end();
   }
 });
 
 server.listen(port, host, () => {
   console.log(`NextGenAgent Hue Companion: ${origin}`);
-  console.log(hueController ? "Hue 설정을 불러왔습니다." : `Hue 설정 필요: npm run hue:setup (${setupError || configPath})`);
+  console.log(hueAdmin.controller ? "Hue 설정을 불러왔습니다." : '개발자 조명 탭에서 Bridge를 등록하세요.');
 });
 
 async function handleHue(request, response, url) {
+  if (process.env.NEXTGEN_HUE_ENABLED === 'false') return sendJson(response, 200, { configured: Boolean(hueAdmin.controller), connected: false, disabled: true });
+  const hueController = hueAdmin.controller;
   if (request.method === "GET" && url.pathname === "/api/hue/status") {
-    if (!hueController) return sendJson(response, 200, { connected: false, configured: false, message: setupError });
+    if (!hueController) return sendJson(response, 200, { connected: false, configured: false, message: hueAdmin.error });
+    if (Object.keys(hueController.targets).length !== 4) return sendJson(response, 200, { connected: false, configured: true, message: '개발자 조명 탭에서 네 전구를 지정하세요.' });
     try {
       await hueController.status();
       return sendJson(response, 200, { connected: true, configured: true });
@@ -85,6 +99,33 @@ async function handleHue(request, response, url) {
   }
 
   return sendJson(response, 404, { error: "not_found" });
+}
+
+async function handleAdmin(request, response, url) {
+  const authorization = await fetch(`${upstreamUrl}/api/admin/session`, {
+    headers: { Origin: new URL(upstreamUrl).origin, Cookie: request.headers.cookie || '' }, signal: AbortSignal.timeout(5000)
+  });
+  if (!authorization.ok || !(await authorization.json().catch(() => ({}))).authenticated) return sendJson(response, authorization.status === 401 ? 401 : 503, { error: '개발자 로그인이 필요하거나 인증 서버에 연결하지 못했습니다.' });
+  if (request.method === 'GET' && url.pathname === '/api/hue/admin/status') return sendJson(response, 200, await hueAdmin.snapshot());
+  if (request.method !== 'POST' && request.method !== 'PUT') return sendJson(response, 405, { error: 'method_not_allowed' });
+  const body = await readJsonBody(request);
+  const result = await serialize(async () => {
+    switch (url.pathname) {
+      case '/api/hue/admin/discover': return hueAdmin.discover();
+      case '/api/hue/admin/pair/start': return hueAdmin.pairStart(body.ip);
+      case '/api/hue/admin/pair/poll': return hueAdmin.pairPoll();
+      case '/api/hue/admin/mappings': return hueAdmin.mappings(body.targets);
+      case '/api/hue/admin/control': return hueAdmin.control(body.id, body.state);
+      case '/api/hue/admin/identify': return hueAdmin.identify(body.id);
+      case '/api/hue/admin/preview': return hueAdmin.preview(body);
+      case '/api/hue/admin/restore':
+        if (body.id) { await hueAdmin.light(body.id); await hueAdmin.controller.restoreLight(body.id); }
+        else await hueAdmin.requireController().reset();
+        return { ok: true };
+      default: throw new HueAdminError('not_found', 404);
+    }
+  });
+  return sendJson(response, 200, result);
 }
 
 async function proxyApi(request, response, url) {
@@ -234,7 +275,7 @@ class RequestError extends Error {
 
 async function shutdown(signal) {
   console.log(`${signal}: Hue 상태를 복원하고 종료합니다.`);
-  await hueController?.reset().catch((error) => console.error(error));
+  await hueAdmin.controller?.reset().catch((error) => console.error(error));
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 4000).unref();
 }

@@ -6,12 +6,15 @@ import {
   type RagChunk,
   type RetrievedEvidence
 } from "@nextgen/rag";
-import dreamMentorChunks from "../../../data/processed/dream-mentor.chunks.json";
+import dbBundle from "../../../data/processed/db-bundle.json";
+const dbManifest = dbBundle.manifest;
 import { handleVoiceRoute } from "./voice";
 
 export interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_VECTOR_STORE_ID?: string;
+  OPENAI_DB_VERSION?: string;
+  NEXTGEN_INSTANCE_ID?: string;
   OPENAI_MODEL?: string;
   OPENAI_MODERATION_MODEL?: string;
   SUPABASE_FUNCTIONS_URL?: string;
@@ -70,7 +73,7 @@ interface VectorSearchResult {
   content?: Array<{ type?: string; text?: string }>;
 }
 
-const chunks = dreamMentorChunks as RagChunk[];
+const chunks = dbBundle.chunks as RagChunk[];
 const MAX_HISTORY_MESSAGES = 14;
 const MAX_MESSAGE_LENGTH = 2400;
 
@@ -125,6 +128,9 @@ export default {
       return withRequestCors(json(
         {
           ok: true,
+          project: "nextgenagent",
+          instanceId: env.NEXTGEN_INSTANCE_ID || null,
+          dbVersion: dbManifest.version,
           chunks: chunks.length,
           reviewed: chunks.filter((chunk) => chunk.reviewStatus === "verified").length,
           needsReview: chunks.filter((chunk) => chunk.reviewStatus === "needs_review").length,
@@ -234,7 +240,7 @@ async function handleChatCore(request: Request, env: Env): Promise<Response> {
 
   const agentChunks = chunks.filter((chunk) => chunk.agentIds.includes(agentId));
   const localEvidence = searchLocalEvidence(agentChunks, latestUserMessage.content, agent.retrievalTags, 8);
-  const semanticMatches = await searchVectorStore(latestUserMessage.content, env);
+  const semanticMatches = await searchVectorStore(latestUserMessage.content, agentId, env);
   const evidence = mergeSemanticEvidence(agentChunks, localEvidence, semanticMatches, 5);
   const groundingConfidence = estimateGroundingConfidence(evidence);
   const insufficientEvidence = evidence.length < 2 || groundingConfidence === "low";
@@ -342,8 +348,9 @@ function normalizeMessages(value: unknown): ChatMessage[] {
     .slice(-MAX_HISTORY_MESSAGES);
 }
 
-async function searchVectorStore(
+export async function searchVectorStore(
   query: string,
+  agentId: AgentId,
   env: Env
 ): Promise<Array<{ text: string; score: number }>> {
   if (!hasVectorBackend(env)) return [];
@@ -352,7 +359,11 @@ async function searchVectorStore(
     const response = await callOpenAI("vector_search", {
       query,
       max_num_results: 6,
-      rewrite_query: true
+      rewrite_query: true,
+      filters: { type: "and", filters: [
+        { type: "eq", key: "agent_id", value: agentId },
+        { type: "eq", key: "db_version", value: dbManifest.version }
+      ] }
     }, env);
 
     if (!response.ok) return [];

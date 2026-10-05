@@ -140,3 +140,15 @@ test("admin login issues an eight-hour hardened cookie without exposing secrets"
   assert.match(cookie, /Max-Age=28800/i);
   assert.doesNotMatch(cookie, /correct horse battery staple/);
 });
+
+test('admin session endpoint accepts only a signed login cookie', async () => {
+  const env = { ...baseVoiceEnv, VOICE_ADMIN_PASSWORD: 'correct horse battery staple', VOICE_ADMIN_SESSION_SECRET: '0123456789abcdef0123456789abcdef' };
+  const denied = await voiceRequest('/api/admin/session', { method: 'GET' }, env);
+  assert.equal(denied?.status, 401);
+  const login = await voiceRequest('/api/admin/login', { method: 'POST', body: JSON.stringify({ password: env.VOICE_ADMIN_PASSWORD }) }, env);
+  const cookie = login!.headers.get('Set-Cookie')!.split(';')[0];
+  const accepted = await voiceRequest('/api/admin/session', { method: 'GET', headers: { Cookie: cookie } }, env);
+  assert.deepEqual(await accepted!.json(), { authenticated: true });
+  const forged = await voiceRequest('/api/admin/session', { method: 'GET', headers: { Cookie: cookie + 'tampered' } }, env);
+  assert.equal(forged?.status, 401);
+});

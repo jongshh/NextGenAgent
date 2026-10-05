@@ -388,6 +388,9 @@ verify_jwt = false
 [functions.openai-proxy]
 verify_jwt = false
 
+[functions.voice-profile-api]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

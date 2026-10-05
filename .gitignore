@@ -10,6 +10,7 @@ artifacts/
 /Storygator
 *.bat
 !setup-hue.bat
+!start_program.bat
 !start-test-web.bat
 !start-voice-test.bat
 !start-voice-hue-test.bat
@@ -17,3 +18,4 @@ supabase/.temp/
 supabase/functions/.env
 supabase/.env
 apps/hue-companion/.local/
+.local/

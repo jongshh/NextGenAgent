@@ -52,6 +52,7 @@ export class HueEffectController {
     this.targets = targets;
     this.current = null;
     this.baselines = new Map();
+    this.lastError = null;
   }
 
   async status() {
@@ -68,6 +69,8 @@ export class HueEffectController {
     const controller = new AbortController();
     const effect = {
       resourceId,
+      agentId: request.agentId,
+      preset: request.cue.preset,
       responseId: request.responseId,
       original,
       controller,
@@ -77,6 +80,7 @@ export class HueEffectController {
     this.current = effect;
     effect.promise = this.run(effect, request)
       .catch((error) => {
+        this.lastError = { message: error.message, at: new Date().toISOString() };
         console.error(JSON.stringify({
           message: "Hue 효과 실행 실패",
           responseId: effect.responseId,
@@ -101,11 +105,12 @@ export class HueEffectController {
   async reset() {
     await this.stop(undefined, false);
     const baselines = [...this.baselines.entries()];
-    this.baselines.clear();
     await Promise.all(baselines.map(async ([resourceId, light]) => {
       try {
         await this.restore(resourceId, light);
+        this.baselines.delete(resourceId);
       } catch (error) {
+        this.lastError = { message: error.message, at: new Date().toISOString() };
         console.error(JSON.stringify({
           message: "Hue 기준 상태 복원 실패",
           resourceId,
@@ -113,6 +118,21 @@ export class HueEffectController {
         }));
       }
     }));
+  }
+
+  async manual(resourceId, state) {
+    if (this.current?.resourceId === resourceId) await this.stop(undefined, false);
+    if (!this.baselines.has(resourceId)) this.baselines.set(resourceId, await this.client.getLight(resourceId));
+    await this.client.setLight(resourceId, state);
+  }
+
+  async restoreLight(resourceId) {
+    if (this.current?.resourceId === resourceId) await this.stop(undefined, false);
+    const baseline = this.baselines.get(resourceId);
+    if (baseline) {
+      await this.restore(resourceId, baseline);
+      this.baselines.delete(resourceId);
+    }
   }
 
   async run(effect, request) {

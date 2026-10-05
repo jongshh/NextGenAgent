@@ -16,7 +16,7 @@ try {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await page.screenshot({ path: path.join(outputDir, "session-gate-desktop.png"), fullPage: true });
   await page.getByRole("textbox", { name: "참여 ID", exact: true }).fill(`desktop-${runId}`);
   await page.getByRole("button", { name: "참여 ID로 계속", exact: true }).click();
@@ -69,7 +69,8 @@ try {
   });
   await sourceDrawer.getByLabel("이 답변의 바탕 닫기").click();
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId('dialogue-box').waitFor({ state: 'visible' });
   const sessionRestored = await page.getByTestId("dialogue-box").isVisible();
 
   await page.getByLabel("선배 선택으로 돌아가기").click();
@@ -105,7 +106,8 @@ try {
   const sourceDrawerBVisible = await sourceDrawerB.isVisible();
   await sourceDrawerB.getByLabel("이 답변의 바탕 닫기").click();
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId('conversation-b-transcript').waitFor({ state: 'visible' });
   const versionBRestored = await page.getByTestId("conversation-b-transcript").isVisible();
   await page.screenshot({
     path: path.join(outputDir, "conversation-b-desktop.png"),
@@ -132,7 +134,7 @@ try {
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobilePage = await mobile.newPage();
-  await mobilePage.goto(baseUrl, { waitUntil: "networkidle" });
+  await mobilePage.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await mobilePage.getByRole("textbox", { name: "참여 ID", exact: true }).fill(`mobile-${runId}`);
   await mobilePage.getByRole("button", { name: "참여 ID로 계속", exact: true }).click();
   await mobilePage.getByTestId("mentor-pathfinder").waitFor({ state: "visible" });
@@ -172,7 +174,7 @@ try {
 
   const mobileB = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobileBPage = await mobileB.newPage();
-  await mobileBPage.goto(baseUrl, { waitUntil: "networkidle" });
+  await mobileBPage.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await mobileBPage.getByRole("textbox", { name: "참여 ID", exact: true }).fill(`mobile-b-${runId}`);
   await mobileBPage.getByRole("button", { name: "참여 ID로 계속", exact: true }).click();
   await mobileBPage.getByTestId("mentor-pathfinder").waitFor({ state: "visible" });

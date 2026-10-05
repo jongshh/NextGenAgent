@@ -1,0 +1,6 @@
+[
+  { "agentId": "pathfinder", "path": "DB/길을 찾는 사람.pdf" },
+  { "agentId": "creator", "path": "DB/창작하는 사람.pdf" },
+  { "agentId": "thinker", "path": "DB/생각하는 사람.pdf" },
+  { "agentId": "connector", "path": "DB/용기있는 사람.pdf" }
+]
