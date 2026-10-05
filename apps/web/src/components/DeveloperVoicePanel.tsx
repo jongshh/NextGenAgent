@@ -29,12 +29,27 @@ export function DeveloperVoicePanel({ workerUrl }: { workerUrl: string }) {
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<'voices' | 'lights'>(() => window.location.pathname.endsWith('/lights') ? 'lights' : 'voices');
 
-  useEffect(() => { void loadProfiles(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`${workerUrl}/api/admin/auth-state`, { credentials: "include" })
+      .then(async response => {
+        if (!response.ok) throw new Error("auth_state_failed");
+        const payload = await response.json() as { authenticated?: boolean };
+        if (!cancelled && payload.authenticated) await loadProfiles();
+      })
+      .catch(() => { if (!cancelled) setMessage("관리자 인증 서버에 연결하지 못했습니다."); });
+    return () => { cancelled = true; };
+  }, [workerUrl]);
 
   async function loadProfiles() {
     try {
       const response = await fetch(`${workerUrl}/api/admin/voice-profiles`, { credentials: "include" });
-      if (response.status === 401) return;
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setProfiles([]);
+        setMessage("관리자 인증이 만료됐습니다. 다시 로그인해 주세요.");
+        return;
+      }
       if (!response.ok) throw new Error("profile_load_failed");
       const payload = await response.json() as { profiles?: VoiceProfile[]; persistent?: boolean };
       setProfiles(payload.profiles || []);
@@ -139,7 +154,10 @@ export function DeveloperVoicePanel({ workerUrl }: { workerUrl: string }) {
             <label>말투·속도·감정 지침<textarea rows={4} value={profile.speakingInstructions} onChange={(event) => update(profile.agentId, { speakingInstructions: event.target.value })} /></label>
             <label>미리 듣기 문장<textarea rows={3} value={profile.previewText} onChange={(event) => update(profile.agentId, { previewText: event.target.value })} /></label>
             <footer>
-              <button type="button" className="secondary" disabled={busy} onClick={() => void previewVoice(workerUrl, profile).catch(() => setMessage("미리 듣기를 재생하지 못했습니다."))}><Play size={16} /> 미리 듣기</button>
+              <button type="button" className="secondary" disabled={busy} onClick={() => {
+                setMessage(null);
+                void previewVoice(workerUrl, profile).catch(error => setMessage(error instanceof Error ? error.message : "미리 듣기를 재생하지 못했습니다."));
+              }}><Play size={16} /> 미리 듣기</button>
               <button type="button" disabled={busy} onClick={() => void save(profile)}><Save size={16} /> 저장</button>
             </footer>
           </article>
@@ -176,8 +194,13 @@ async function previewVoice(workerUrl: string, profile: VoiceProfile): Promise<v
     credentials: "include",
     body: JSON.stringify({ agentId: profile.agentId, profile, sdp: peer.localDescription?.sdp })
   });
-  const payload = await response.json() as { transport?: { sdp?: string } };
-  if (!response.ok || !payload.transport?.sdp) { peer.close(); throw new Error("preview_failed"); }
+  const payload = await response.json() as { transport?: { sdp?: string }; message?: string };
+  if (!response.ok || !payload.transport?.sdp) {
+    peer.close();
+    throw new Error(response.status === 401
+      ? "음성 생성 인증에 실패했습니다. 관리자 로그인을 확인해 주세요. 로그인 상태라면 OpenAI API 키를 확인해 주세요."
+      : payload.message || `미리 듣기를 생성하지 못했습니다. (HTTP ${response.status})`);
+  }
   await peer.setRemoteDescription({ type: "answer", sdp: payload.transport.sdp });
   window.setTimeout(() => {
     if (channel.readyState === "open") channel.send(JSON.stringify({ type: "session.close" }));

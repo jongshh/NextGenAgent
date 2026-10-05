@@ -145,10 +145,17 @@ test('admin session endpoint accepts only a signed login cookie', async () => {
   const env = { ...baseVoiceEnv, VOICE_ADMIN_PASSWORD: 'correct horse battery staple', VOICE_ADMIN_SESSION_SECRET: '0123456789abcdef0123456789abcdef' };
   const denied = await voiceRequest('/api/admin/session', { method: 'GET' }, env);
   assert.equal(denied?.status, 401);
+  const state = await voiceRequest('/api/admin/auth-state', { method: 'GET' }, env);
+  assert.equal(state?.status, 200);
+  assert.deepEqual(await state!.json(), { authenticated: false });
   const login = await voiceRequest('/api/admin/login', { method: 'POST', body: JSON.stringify({ password: env.VOICE_ADMIN_PASSWORD }) }, env);
   const cookie = login!.headers.get('Set-Cookie')!.split(';')[0];
   const accepted = await voiceRequest('/api/admin/session', { method: 'GET', headers: { Cookie: cookie } }, env);
   assert.deepEqual(await accepted!.json(), { authenticated: true });
+  const signedState = await voiceRequest('/api/admin/auth-state', { method: 'GET', headers: { Cookie: cookie } }, env);
+  assert.deepEqual(await signedState!.json(), { authenticated: true });
   const forged = await voiceRequest('/api/admin/session', { method: 'GET', headers: { Cookie: cookie + 'tampered' } }, env);
   assert.equal(forged?.status, 401);
+  const forgedState = await voiceRequest('/api/admin/auth-state', { method: 'GET', headers: { Cookie: cookie + 'tampered' } }, env);
+  assert.deepEqual(await forgedState!.json(), { authenticated: false });
 });

@@ -64,6 +64,9 @@ export async function handleVoiceRoute(
   if (url.pathname === "/api/admin/logout" && request.method === "POST") {
     return voiceJson(request, env, { ok: true }, 200, { "Set-Cookie": expiredAdminCookie(request) });
   }
+  if (url.pathname === "/api/admin/auth-state" && request.method === "GET") {
+    return voiceJson(request, env, { authenticated: await hasValidAdminSession(request, env) });
+  }
 
   if (url.pathname.startsWith("/api/admin/")) {
     if (!(await hasValidAdminSession(request, env))) {

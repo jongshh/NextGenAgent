@@ -12,7 +12,9 @@ try {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     const errors = [];
+    const unauthorized = [];
     page.on('pageerror', error => errors.push(error.message));
+    page.on('response', response => { if (response.status() === 401) unauthorized.push(new URL(response.url()).pathname); });
     await page.goto(`${base}/developer/lights`, { waitUntil: 'domcontentloaded' });
     await page.getByPlaceholder('관리자 암호').fill(vars.VOICE_ADMIN_PASSWORD);
     await page.getByRole('button', { name: '로그인', exact: true }).click();
@@ -44,6 +46,7 @@ try {
     await page.screenshot({ path: `artifacts/screenshots/developer-lights-controls-${viewport.width}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
+    assert.deepEqual(unauthorized, [], 'Opening the panel and signing in must not issue unauthenticated protected requests.');
     await context.close();
   }
   console.log('Developer login and desktop/mobile lighting controls passed (equipment actions mocked).');
