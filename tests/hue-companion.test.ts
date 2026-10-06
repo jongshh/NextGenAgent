@@ -1,6 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HueEffectController, validatePlayRequest } from "../apps/hue-companion/src/effects.mjs";
+import { candleBrightness, HueEffectController, validatePlayRequest } from "../apps/hue-companion/src/effects.mjs";
+
+test('voice brightness follows the latest volume, ignores stale samples, and stops on manual control', async () => {
+  const calls: any[] = [];
+  const controller = new HueEffectController({
+    async getLight() { return { on: { on: false }, dimming: { brightness: 40 } }; },
+    async setLight(_id: string, state: any) { calls.push(state); }
+  }, { pathfinder: 'light-1' });
+  const request = validatePlayRequest({ agentId: 'pathfinder', responseId: 'audio-test', playbackMode: 'voice',
+    cue: { preset: 'calm-guide', durationMs: 3000, intensity: 'gentle' } });
+  await controller.play(request);
+  try {
+    assert.equal(controller.audioLevel('creator', 1), false);
+    assert.equal(controller.audioLevel('pathfinder', NaN), false);
+    assert.equal(controller.audioLevel('pathfinder', 2), false);
+    assert.equal(controller.audioLevel('pathfinder', 1), true);
+    await new Promise(resolve => setTimeout(resolve, 230));
+    assert.ok(calls.at(-1).dimming.brightness >= 93);
+    controller.current.levelAt = Date.now() - 1000;
+    await new Promise(resolve => setTimeout(resolve, 230));
+    assert.ok(calls.at(-1).dimming.brightness <= 25);
+    await controller.manual('light-1', { dimming: { brightness: 44 } });
+    assert.equal(controller.audioLevel('pathfinder', 1), false);
+    const count = calls.length;
+    await new Promise(resolve => setTimeout(resolve, 230));
+    assert.equal(calls.length, count);
+    await controller.reset();
+    assert.equal(calls.at(-1).dimming.brightness, 40);
+  } finally { await controller.reset(); }
+});
+
+test('candle brightness has a dramatic bounded range', () => {
+  for (let time = 0; time < 3000; time += 50) {
+    assert.ok(candleBrightness(0, time) >= 10 && candleBrightness(0, time) <= 25);
+    assert.ok(candleBrightness(1, time) >= 93 && candleBrightness(1, time) <= 100);
+  }
+});
 
 test("Hue play requests accept only allowlisted presets and bounded durations", () => {
   const valid = validatePlayRequest({

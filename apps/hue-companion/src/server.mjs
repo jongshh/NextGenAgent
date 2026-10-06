@@ -90,6 +90,17 @@ async function handleHue(request, response, url) {
     return sendJson(response, 202, { ok: true });
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/hue/audio-level') {
+    const body = await readJsonBody(request);
+    if (!body || !['pathfinder', 'creator', 'thinker', 'connector'].includes(body.agentId) ||
+        typeof body.level !== 'number' || !Number.isFinite(body.level) || body.level < 0 || body.level > 1 ||
+        !Number.isSafeInteger(body.sampledAt)) {
+      return sendJson(response, 400, { error: 'invalid_audio_level' });
+    }
+    if (Math.abs(Date.now() - body.sampledAt) > 750) return sendJson(response, 200, { applied: false, stale: true });
+    return sendJson(response, 200, { applied: hueController?.audioLevel(body.agentId, body.level) || false });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/hue/stop") {
     const responseId = url.searchParams.get("responseId");
     if (responseId && responseId.length > 160) return sendJson(response, 400, { error: "invalid_response_id" });
@@ -115,6 +126,7 @@ async function handleAdmin(request, response, url) {
       case '/api/hue/admin/pair/start': return hueAdmin.pairStart(body.ip);
       case '/api/hue/admin/pair/poll': return hueAdmin.pairPoll();
       case '/api/hue/admin/mappings': return hueAdmin.mappings(body.targets);
+      case '/api/hue/admin/profile': return hueAdmin.profile(body.agentId, body.profile);
       case '/api/hue/admin/control': return hueAdmin.control(body.id, body.state);
       case '/api/hue/admin/identify': return hueAdmin.identify(body.id);
       case '/api/hue/admin/preview': return hueAdmin.preview(body);

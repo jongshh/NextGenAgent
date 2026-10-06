@@ -1572,6 +1572,11 @@ a:focus-visible {
 .voice-profile-card input[type="range"] { width: 100%; }
 .voice-profile-card small { overflow-wrap: anywhere; }
 .hue-bridge-card { margin: 16px 0; }
+.hue-palette { display: flex; gap: 12px; }
+.hue-palette label { flex: 1; min-width: 0; }
+.hue-palette input { width: 100%; }
+.hue-profile-card small { display: block; line-height: 1.6; }
+.hue-profile-card button { margin-top: 8px; }
 .voice-admin-login { width: min(440px, 100%); margin: 12vh auto 0; padding: 32px; border: 1px solid rgba(255,255,255,.13); border-radius: 20px; background: #19231e; text-align: center; }
 .voice-admin-login h1 { margin: 12px 0 6px; }
 .voice-admin-login input { width: 100%; margin: 22px 0 10px; }

@@ -1,3 +1,4 @@
+import { lightProfiles, profileBrightness, profileColor } from './profiles.mjs';
 const EMOTION_COLORS = {
   sad: { color: { xy: { x: 0.17, y: 0.16 } } },
   anxious: { color: { xy: { x: 0.56, y: 0.4 } } },
@@ -31,9 +32,10 @@ export function validatePlayRequest(value) {
   const match = /^([a-z]+)-([a-z]+)$/.exec(value.cue.preset || "");
   const durationMs = Number(value.cue.durationMs);
   const playbackMode = value.playbackMode || "timed";
+  const phase = value.phase || 'answer';
   if (!match || !EMOTIONS.has(match[1]) || !INTENTS.has(match[2]) ||
       !["low", "gentle", "standard"].includes(value.cue.intensity) ||
-      !PLAYBACK_MODES.has(playbackMode) ||
+      !PLAYBACK_MODES.has(playbackMode) || !['listening', 'thinking', 'answer'].includes(phase) ||
       !Number.isInteger(durationMs) || durationMs < 3000 || durationMs > 8000) return null;
 
   return {
@@ -41,15 +43,17 @@ export function validatePlayRequest(value) {
     responseId: value.responseId,
     cue: { preset: value.cue.preset, durationMs, intensity: value.cue.intensity },
     playbackMode,
+    phase,
     emotion: match[1],
     intent: match[2]
   };
 }
 
 export class HueEffectController {
-  constructor(client, targets) {
+  constructor(client, targets, profiles) {
     this.client = client;
     this.targets = targets;
+    this.profiles = lightProfiles(profiles);
     this.current = null;
     this.baselines = new Map();
     this.lastError = null;
@@ -57,6 +61,14 @@ export class HueEffectController {
 
   async status() {
     await Promise.all([...new Set(Object.values(this.targets))].map((resourceId) => this.client.getLight(resourceId)));
+    return true;
+  }
+
+  audioLevel(agentId, level) {
+    if (!AGENT_IDS.has(agentId) || typeof level !== 'number' || !Number.isFinite(level) || level < 0 || level > 1) return false;
+    if (this.current?.agentId !== agentId || !this.current.audioReactive) return false;
+    this.current.level = level;
+    this.current.levelAt = Date.now();
     return true;
   }
 
@@ -75,6 +87,11 @@ export class HueEffectController {
       original,
       controller,
       restoreOnStop: request.playbackMode === "timed",
+      audioReactive: request.playbackMode === 'voice',
+      level: 0,
+      levelAt: 0,
+      phase: request.phase || 'answer',
+      startedAt: Date.now(),
       promise: null
     };
     this.current = effect;
@@ -143,16 +160,31 @@ export class HueEffectController {
     const stageMs = Math.max(500, Math.floor(request.cue.durationMs / factors.length));
 
     try {
-      for (const factor of factors) {
+      if (effect.audioReactive) {
+        await this.client.setLight(effect.resourceId, { on: { on: true } });
+        while (!effect.controller.signal.aborted) {
+          const profile = this.profiles[effect.agentId];
+          const level = Date.now() - effect.levelAt < 600 ? effect.level : 0;
+          await this.client.setLight(effect.resourceId, {
+            dimming: { brightness: profileBrightness(profile, level, Date.now()) },
+            color: profileColor(profile, emotion, Date.now() - effect.startedAt, effect.phase),
+            dynamics: { duration: 160 }
+          });
+          await abortableDelay(200, effect.controller.signal);
+        }
+        return;
+      }
+      for (let elapsed = 0; elapsed < request.cue.durationMs; elapsed += 200) {
         if (effect.controller.signal.aborted) break;
-        const transitionMs = intent === "ground" ? Math.min(700, request.cue.durationMs) : stageMs;
+        const profile = this.profiles[effect.agentId];
+        const factor = factors[Math.min(factors.length - 1, Math.floor(elapsed / stageMs))];
         await this.client.setLight(effect.resourceId, {
           on: { on: true },
-          dimming: { brightness: Math.max(10, Math.min(100, Math.round(baseBrightness * factor))) },
-          ...EMOTION_COLORS[emotion],
-          dynamics: { duration: transitionMs }
+          dimming: { brightness: Math.max(profile.minBrightness, Math.min(profile.maxBrightness, Math.round(baseBrightness * factor))) },
+          color: profileColor(profile, emotion, elapsed, effect.phase),
+          dynamics: { duration: 200 }
         });
-        await abortableDelay(intent === "ground" ? request.cue.durationMs : stageMs, effect.controller.signal);
+        await abortableDelay(200, effect.controller.signal);
       }
       if (request.playbackMode === "voice" && !effect.controller.signal.aborted) {
         await waitForAbort(effect.controller.signal);
@@ -178,6 +210,12 @@ export class HueEffectController {
     }
     await this.client.setLight(resourceId, state);
   }
+}
+
+export function candleBrightness(level, timeMs) {
+  const amplitude = Math.max(0, Math.min(1, level));
+  const flicker = 4 * Math.sin(timeMs / 117) + 3 * Math.sin(timeMs / 71);
+  return Math.max(10, Math.min(100, Math.round(18 + 82 * Math.sqrt(amplitude) + flicker)));
 }
 
 function waitForAbort(signal) {

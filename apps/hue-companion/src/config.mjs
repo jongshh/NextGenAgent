@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { atomicWrite } from "../../../scripts/config.mjs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateLightProfile } from './profiles.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const configPath = process.env.NEXTGEN_HUE_CONFIG || resolve(appRoot, ".local", "config.json");
@@ -22,6 +23,13 @@ export async function saveConfig(value) {
 
 function validateConfig(value) {
   const agents = ["pathfinder", "creator", "thinker", "connector"];
+  if (value?.profiles !== undefined) {
+    if (!value.profiles || typeof value.profiles !== 'object' || Array.isArray(value.profiles)) throw new Error('조명 프로필 형식이 올바르지 않습니다.');
+    for (const [id, profile] of Object.entries(value.profiles)) {
+      if (!agents.includes(id)) throw new Error('알 수 없는 현자 조명 프로필입니다.');
+      validateLightProfile(profile);
+    }
+  }
   if (!value || typeof value !== "object" || typeof value.bridgeIp !== "string" || !value.bridgeIp ||
       typeof value.applicationKey !== "string" || !value.applicationKey || typeof value.certificateFingerprint !== "string" ||
       !/^[a-fA-F0-9]{64}$/.test(value.certificateFingerprint.replaceAll(':', ''))) {

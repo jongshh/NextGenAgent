@@ -8,6 +8,7 @@ import { HueControl } from "./components/HueControl";
 import { VoiceControl } from "./components/VoiceControl";
 import {
   deriveLightCue,
+  createVoiceHueMeter,
   isHueCompanionHost,
   loadHueEffectsEnabled,
   playAssistantOutput,
@@ -335,12 +336,17 @@ export default function App() {
     setVoiceError(null);
     setVoiceMuted(false);
     const adapter = new OpenAiLiveAdapter(workerUrl, agentId, sessionRef.current.id, voiceMode, {
+      onAudioLevel: createVoiceHueMeter(agentId, () => hueEnabledRef.current && voiceAdapterRef.current !== null),
       onState: (state) => {
         setVoiceState(state);
         if (state === "user-speaking") void playVoiceHuePhase("listening");
         else if (state === "thinking") void playVoiceHuePhase("thinking");
         else if (state === "listening" && voiceHuePhaseRef.current === null) {
           void playVoiceHuePhase("listening");
+        }
+        else if (state === 'idle' || state === 'error') {
+          voiceHuePhaseRef.current = null;
+          void voiceHueCommandRef.current.catch(() => false).then(() => stopHueEffects());
         }
       },
       onTranscript: (speaker, text) => {
@@ -355,9 +361,11 @@ export default function App() {
       },
       onPlaybackEnd: (_result, spokenText) => {
         if (spokenText) markLatestVoiceDelivery("completed", spokenText);
+        void playVoiceHuePhase('listening');
       },
       onInterrupted: (_result, spokenText) => {
         markLatestVoiceDelivery("interrupted", spokenText);
+        void playVoiceHuePhase('listening');
       },
       onError: setVoiceError
     });
@@ -389,14 +397,14 @@ export default function App() {
     voiceHuePhaseRef.current = phase;
     await queueVoiceHueCue(
       `${sessionRef.current.id}-${phase}-${Date.now()}`,
-      VOICE_PHASE_CUES[phase]
+      VOICE_PHASE_CUES[phase], phase
     );
   }
 
-  function queueVoiceHueCue(responseId: string, cue: LightCue): Promise<boolean> {
+  function queueVoiceHueCue(responseId: string, cue: LightCue, phase: 'listening' | 'thinking' | 'answer' = 'answer'): Promise<boolean> {
     const request = voiceHueCommandRef.current
       .catch(() => false)
-      .then(() => playAssistantOutput(agentId, responseId, cue, hueEnabledRef.current, "voice"));
+      .then(() => playAssistantOutput(agentId, responseId, cue, hueEnabledRef.current, "voice", phase));
     voiceHueCommandRef.current = request.catch(() => false);
     void request.then(async (played) => {
       if (!isHueCompanionHost() || !hueEnabledRef.current) return;

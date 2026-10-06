@@ -1,6 +1,7 @@
 import { HueClient, hueRequest } from './hue-client.mjs';
 import { HueEffectController, validatePlayRequest } from './effects.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
+import { lightProfiles, validateLightProfile } from './profiles.mjs';
 
 const agents = ['pathfinder', 'creator', 'thinker', 'connector'];
 export class HueAdminError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
@@ -25,22 +26,22 @@ export class HueAdmin {
   async initialize() {
     try { this.install(await this.readConfig()); } catch (error) { this.error = error.message; }
   }
-  install(config) { this.config = config; this.controller = new HueEffectController(this.clientFactory(config), config.targets); this.error = null; }
+  install(config) { this.config = config; this.controller = new HueEffectController(this.clientFactory(config), config.targets, config.profiles); this.error = null; }
   async snapshot() {
     const updatedAt = new Date().toISOString();
-    if (!this.controller) return { configured: false, connected: false, lights: [], targets: {}, error: this.error, updatedAt };
+    if (!this.controller) return { configured: false, connected: false, lights: [], targets: {}, profiles: lightProfiles(), error: this.error, updatedAt };
     try {
       const lights = await this.controller.client.listLights();
       const current = this.controller.current;
       this.error = null;
-      return { configured: true, connected: true, bridgeIp: this.config.bridgeIp, targets: this.config.targets,
+      return { configured: true, connected: true, bridgeIp: this.config.bridgeIp, targets: this.config.targets, profiles: lightProfiles(this.config.profiles),
         lights: lights.map(light => ({ id: light.id, name: light.metadata?.name || light.id, colorSupported: Boolean(light.color?.xy), connectivity: light.connectivity,
           on: Boolean(light.on?.on), brightness: light.dimming?.brightness || 0, xy: light.color?.xy })),
         current: current ? { agentId: current.agentId, resourceId: current.resourceId, preset: current.preset } : null,
         error: this.controller.lastError ? `${this.controller.lastError.at}: ${this.controller.lastError.message}` : null, updatedAt };
     } catch (error) {
       this.error = error.message;
-      return { configured: true, connected: false, bridgeIp: this.config.bridgeIp, targets: this.config.targets, lights: [], error: this.error, updatedAt };
+      return { configured: true, connected: false, bridgeIp: this.config.bridgeIp, targets: this.config.targets, profiles: lightProfiles(this.config.profiles), lights: [], error: this.error, updatedAt };
     }
   }
   async discover() {
@@ -67,7 +68,7 @@ export class HueAdmin {
       if (response.data?.some?.(item => item.error?.type === 101)) return { waiting: true };
       throw new HueAdminError('Bridge 인증에 실패했습니다.');
     }
-    const config = { bridgeIp: pending.ip, applicationKey: success.username, certificateFingerprint: pending.fingerprint, targets: {} };
+    const config = { bridgeIp: pending.ip, applicationKey: success.username, certificateFingerprint: pending.fingerprint, targets: {}, profiles: lightProfiles(this.config?.profiles) };
     if (this.controller) await this.controller.reset();
     await this.writeConfig(config); this.install(config); this.pending = null;
     return { waiting: false, connected: true };
@@ -92,6 +93,18 @@ export class HueAdmin {
     const state = validateManual(value);
     await this.light(id, Boolean(state.color));
     await this.controller.manual(id, state); return { ok: true };
+  }
+  async profile(agentId, value) {
+    if (!agents.includes(agentId)) throw new HueAdminError('현자를 선택하세요.');
+    this.requireController();
+    let profile;
+    try { profile = validateLightProfile(value); } catch (error) { throw new HueAdminError(error.message); }
+    const profiles = { ...lightProfiles(this.config.profiles), [agentId]: profile };
+    const config = { ...this.config, profiles };
+    await this.writeConfig(config);
+    this.config = config;
+    this.controller.profiles = profiles;
+    return { ok: true, profile };
   }
   async identify(id) {
     await this.light(id);

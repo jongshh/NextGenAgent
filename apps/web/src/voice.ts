@@ -8,6 +8,7 @@ export interface MentorVoiceResult {
 }
 
 export interface VoiceSessionCallbacks {
+  onAudioLevel?: (speaker: 'user' | 'assistant', rms: number) => void;
   onState: (state: VoiceState) => void;
   onTranscript: (speaker: "user" | "assistant", text: string) => void;
   onDelegation: (text: string, turnId: string) => Promise<MentorVoiceResult | null>;
@@ -62,6 +63,8 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
   private analysisFrame: number | null = null;
   private playbackStarted = false;
   private silentSince = 0;
+  private microphoneContext: AudioContext | null = null;
+  private microphoneFrame: number | null = null;
 
   constructor(
     private readonly workerUrl: string,
@@ -81,6 +84,7 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
       this.microphone = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
+      this.startMicrophoneMeter(this.microphone);
       this.callbacks.onState("connecting");
       const peer = new RTCPeerConnection();
       this.peer = peer;
@@ -307,6 +311,10 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
   }
 
   private cleanup(): void {
+    if (this.microphoneFrame !== null) window.cancelAnimationFrame(this.microphoneFrame);
+    void this.microphoneContext?.close();
+    this.microphoneContext = null;
+    this.microphoneFrame = null;
     if (this.outputTimer !== null) window.clearTimeout(this.outputTimer);
     if (this.analysisFrame !== null) window.cancelAnimationFrame(this.analysisFrame);
     void this.audioContext?.close();
@@ -343,7 +351,9 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
           const centered = (value - 128) / 128;
           sum += centered * centered;
         }
-        const audible = Math.sqrt(sum / samples.length) > 0.012;
+        const rms = Math.sqrt(sum / samples.length);
+        this.callbacks.onAudioLevel?.('assistant', this.ready ? rms : 0);
+        const audible = rms > 0.012;
         const now = performance.now();
         if (audible && this.activeResult) {
           this.silentSince = 0;
@@ -361,6 +371,29 @@ export class OpenAiLiveAdapter implements VoiceSessionAdapter {
       this.analysisFrame = window.requestAnimationFrame(sample);
     } catch {
       // Transcript timing remains as a fallback when Web Audio is unavailable.
+    }
+  }
+
+  private startMicrophoneMeter(stream: MediaStream): void {
+    try {
+      const context = new AudioContext();
+      this.microphoneContext = context;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      context.createMediaStreamSource(stream).connect(analyser);
+      void context.resume();
+      const samples = new Float32Array(analyser.fftSize);
+      const sample = () => {
+        if (this.stopped || this.microphoneContext !== context) return;
+        analyser.getFloatTimeDomainData(samples);
+        const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+        const enabled = this.ready && stream.getAudioTracks().some(track => track.enabled);
+        this.callbacks.onAudioLevel?.('user', enabled ? rms : 0);
+        this.microphoneFrame = window.requestAnimationFrame(sample);
+      };
+      this.microphoneFrame = window.requestAnimationFrame(sample);
+    } catch {
+      // Voice remains usable if local audio metering is unavailable.
     }
   }
 }

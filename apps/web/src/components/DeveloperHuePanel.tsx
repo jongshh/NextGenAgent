@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { AGENTS, type AgentId } from '@nextgen/agents';
 
 interface Light { id: string; name: string; colorSupported: boolean; connectivity: string; on: boolean; brightness: number; xy?: { x: number; y: number } }
-interface Snapshot { configured: boolean; connected: boolean; bridgeIp?: string; targets: Partial<Record<AgentId, string>>; lights: Light[]; current?: { agentId: AgentId; resourceId: string; preset: string }; error?: string; updatedAt: string }
+type Emotion = 'sad' | 'anxious' | 'confused' | 'calm' | 'hopeful' | 'happy' | 'neutral';
+interface LightProfile { baseColor: string; minBrightness: number; maxBrightness: number; sensitivity: number; flicker: number; cycleSeconds: number; emotionBlend: number; palettes: Record<Emotion, string[]> }
+const EMOTIONS: Record<Emotion, string> = { sad: '슬픔', anxious: '불안', confused: '고민', calm: '차분함', hopeful: '희망', happy: '기쁨', neutral: '기본' };
+interface Snapshot { configured: boolean; connected: boolean; bridgeIp?: string; targets: Partial<Record<AgentId, string>>; profiles?: Record<AgentId, LightProfile>; lights: Light[]; current?: { agentId: AgentId; resourceId: string; preset: string }; error?: string; updatedAt: string }
 async function api(path: string, body?: unknown) {
   const response = await fetch(`/api/hue/admin/${path}`, { credentials: 'include', ...(body === undefined ? {} : {
     method: path === 'mappings' ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -14,6 +17,8 @@ async function api(path: string, body?: unknown) {
 export function DeveloperHuePanel() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [targets, setTargets] = useState<Partial<Record<AgentId, string>>>({});
+  const [profiles, setProfiles] = useState<Partial<Record<AgentId, LightProfile>>>({});
+  const profileDirty = useRef(new Set<AgentId>());
   const [ip, setIp] = useState('');
   const [bridges, setBridges] = useState<Array<{ id: string; ip: string }>>([]);
   const [message, setMessage] = useState('');
@@ -27,6 +32,7 @@ export function DeveloperHuePanel() {
       if (!mounted.current) return;
       setSnapshot(result);
       if (!dirty.current) setTargets(result.targets);
+      if (result.profiles) setProfiles(current => Object.fromEntries((Object.keys(AGENTS) as AgentId[]).map(id => [id, profileDirty.current.has(id) ? current[id] : result.profiles![id]])));
     } catch (error) { if (mounted.current) setMessage(error instanceof Error ? error.message : '상태 조회 실패'); }
   }
   useEffect(() => {
@@ -81,8 +87,50 @@ export function DeveloperHuePanel() {
       <button disabled={busy || !snapshot?.connected} onClick={() => void run(async () => { await api('mappings', { targets }); dirty.current = false; }, '전구 지정을 저장했습니다.')}>전구 지정 저장</button>
       <button disabled={busy || !snapshot?.connected} onClick={() => void run(() => api('restore', {}), '복원 요청 완료. 전구 상태를 확인하세요.')}>전체 효과 정지·원상 복원</button>
     </div>
+    <h2>현자별 대화 조명 프로필</h2>
+    <p>들을 때는 현자의 기본 색상, 답변할 때는 기본 색상과 감정 팔레트를 섞어 순환합니다. 저장하면 진행 중인 효과에도 반영됩니다.</p>
+    <div className="voice-profile-grid">{(Object.keys(AGENTS) as AgentId[]).map(id => profiles[id] && <ProfileCard
+      key={id} id={id} profile={profiles[id]!} busy={busy} configured={Boolean(snapshot?.configured)} mapped={Boolean(snapshot?.targets[id])}
+      update={profile => { profileDirty.current.add(id); setProfiles(current => ({ ...current, [id]: profile })); }}
+      save={() => run(async () => { await api('profile', { agentId: id, profile: profiles[id] }); profileDirty.current.delete(id); }, `${AGENTS[id].title} 조명 프로필을 저장했습니다.`)}
+      preview={emotion => run(async () => {
+        await api('profile', { agentId: id, profile: profiles[id] }); profileDirty.current.delete(id);
+        await api('preview', { agentId: id, responseId: crypto.randomUUID(), cue: { preset: `${emotion}-guide`, durationMs: 8000, intensity: 'standard' } });
+      }, '프로필 저장 완료. 8초 동안 색상 흐름을 미리 봅니다.')}
+    />)}</div>
     <div className="voice-profile-grid">{snapshot?.lights.map(light => <LightCard key={light.id} light={light} busy={busy} run={run} />)}</div>
   </section>;
+}
+function ProfileCard({ id, profile, busy, configured, mapped, update, save, preview }: {
+  id: AgentId; profile: LightProfile; busy: boolean; configured: boolean; mapped: boolean;
+  update: (profile: LightProfile) => void; save: () => Promise<void>; preview: (emotion: Emotion) => Promise<void>;
+}) {
+  const [emotion, setEmotion] = useState<Emotion>('hopeful');
+  const change = (key: keyof LightProfile, value: number | string) => update({ ...profile, [key]: value });
+  const sliders: Array<{ key: 'minBrightness' | 'maxBrightness' | 'sensitivity' | 'flicker' | 'cycleSeconds' | 'emotionBlend'; label: string; min: number; max: number; step: number }> = [
+    { key: 'minBrightness', label: '최소 밝기 (%)', min: 1, max: profile.maxBrightness, step: 1 },
+    { key: 'maxBrightness', label: '최대 밝기 (%)', min: profile.minBrightness, max: 100, step: 1 },
+    { key: 'sensitivity', label: '음량 반응 강도', min: 0, max: 2, step: 0.05 },
+    { key: 'flicker', label: '촛불 흔들림', min: 0, max: 1, step: 0.05 },
+    { key: 'cycleSeconds', label: '색상 한 바퀴 (초)', min: 3, max: 30, step: 1 },
+    { key: 'emotionBlend', label: '감정 색상 비중 (0=기본 색상)', min: 0, max: 1, step: 0.05 }
+  ];
+  return <article className="voice-profile-card hue-profile-card" aria-label={`${AGENTS[id].title} 조명 프로필`}>
+    <h3>{AGENTS[id].title}</h3>
+    <label>현자 기본 색상<input type="color" value={profile.baseColor} disabled={busy} onChange={e => change('baseColor', e.target.value)} /></label>
+    {sliders.map(slider => <label key={slider.key}>{slider.label} · {profile[slider.key]}
+      <input type="range" disabled={busy} min={slider.min} max={slider.max} step={slider.step} value={profile[slider.key]} onChange={e => change(slider.key, Number(e.target.value))} />
+    </label>)}
+    <label>감정 팔레트<select value={emotion} onChange={e => setEmotion(e.target.value as Emotion)}>{(Object.keys(EMOTIONS) as Emotion[]).map(key => <option key={key} value={key}>{EMOTIONS[key]}</option>)}</select></label>
+    <div className="hue-palette">{profile.palettes[emotion].map((color, index) => <label key={index}>색상 {index + 1}<input type="color" disabled={busy} value={color} onChange={e => {
+      const colors = [...profile.palettes[emotion]]; colors[index] = e.target.value;
+      update({ ...profile, palettes: { ...profile.palettes, [emotion]: colors } });
+    }} /></label>)}</div>
+    <small>세 색상이 부드럽게 이어지고 마지막 색상에서 첫 색상으로 반복됩니다.</small>
+    <button disabled={busy || !configured} onClick={() => void save()}>조명 프로필 저장</button>
+    <button disabled={busy || !mapped} onClick={() => void preview(emotion)}>저장·색상 흐름 미리보기</button>
+    {!configured && <small>Bridge 등록 후 프로필을 저장할 수 있습니다.</small>}
+  </article>;
 }
 function LightCard({ light, busy, run }: { light: Light; busy: boolean; run: (action: () => Promise<unknown>, success?: string) => Promise<void> }) {
   const [brightness, setBrightness] = useState(light.brightness);

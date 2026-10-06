@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HueAdmin, validateManual, isPrivateAddress } from '../apps/hue-companion/src/admin.mjs';
+import { defaultLightProfile } from '../apps/hue-companion/src/profiles.mjs';
+
+test('saving a profile preserves bridge settings and updates the live controller without losing baselines', async () => {
+  const { admin, saved, config } = fixture(); await admin.initialize();
+  await admin.preview({ agentId: 'pathfinder', responseId: 'profile-test', playbackMode: 'voice', cue: { preset: 'happy-guide', durationMs: 3000, intensity: 'gentle' } });
+  try {
+    const active = admin.controller.current;
+    const profile = { ...defaultLightProfile('pathfinder'), baseColor: '#123456', maxBrightness: 55 };
+    await admin.profile('pathfinder', profile);
+    assert.equal(admin.controller.current, active);
+    assert.ok(admin.controller.baselines.has('a'));
+    assert.equal(saved[0].applicationKey, config.applicationKey);
+    assert.deepEqual(saved[0].targets, config.targets);
+    assert.deepEqual((await admin.snapshot()).profiles.pathfinder, profile);
+    await assert.rejects(admin.profile('pathfinder', { ...profile, maxBrightness: -1 }));
+    assert.equal(saved.length, 1);
+    const restored = new HueAdmin({ readConfig: async () => saved[0], clientFactory: () => admin.controller.client });
+    await restored.initialize();
+    assert.equal(restored.controller.profiles.pathfinder.baseColor, '#123456');
+  } finally { await admin.controller.reset(); }
+});
 
 function fixture() {
   const lights = ['a', 'b', 'c', 'd'].map(id => ({ id, type: 'light', on: { on: false }, dimming: { brightness: 20 }, color: { xy: { x: 0.3, y: 0.3 } }, connectivity: 'connected' }));
