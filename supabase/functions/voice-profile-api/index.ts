@@ -5,14 +5,35 @@ Deno.serve(async (request) => {
   if (!isTrustedProxy(request)) return json({ error: "unauthorized" }, 401);
 
   const body = await request.json().catch(() => null) as {
-    action?: "list" | "save";
+    action?: "list" | "save" | "prompts-load" | "prompts-save";
     profile?: Record<string, unknown>;
+    configuration?: Record<string, unknown>;
+    version?: number;
   } | null;
   if (!body?.action) return json({ error: "invalid_request" }, 400);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) return json({ error: "supabase_not_configured" }, 500);
+
+  if (body.action === 'prompts-load') {
+    const response = await fetch(`${supabaseUrl}/rest/v1/mentor_prompt_configuration?id=eq.default&select=configuration,version,updated_at`, { headers: adminHeaders(serviceKey) });
+    if (!response.ok) return forward(response);
+    const rows = await response.json();
+    return json(rows[0] || { configuration: null, version: 0 });
+  }
+  if (body.action === 'prompts-save') {
+    if (!isValidPromptConfiguration(body.configuration) || !Number.isSafeInteger(body.version) || body.version! < 0) return json({ error: 'invalid_prompt_configuration' }, 400);
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/save_mentor_prompt_configuration`, {
+      method: 'POST', headers: adminHeaders(serviceKey),
+      body: JSON.stringify({ p_configuration: body.configuration, p_expected_version: body.version })
+    });
+    if (!response.ok) return forward(response);
+    const rows = await response.json();
+    if (!rows.length) return json({ error: '다른 창에서 프롬프트가 변경됐습니다. 다시 불러온 뒤 저장하세요.' }, 409);
+    return json({ ok: true, configuration: rows[0].configuration, version: rows[0].version });
+  }
+  if (body.action !== 'list' && body.action !== 'save') return json({ error: 'invalid_action' }, 400);
 
   if (body.action === "list") {
     const response = await fetch(
@@ -53,6 +74,16 @@ Deno.serve(async (request) => {
   const rows = await response.json() as Array<Record<string, unknown>>;
   return json({ ok: true, profile: toClientProfile(rows[0] || row) });
 });
+
+function isValidPromptConfiguration(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, any>;
+  const text = (v: unknown) => typeof v === 'string' && v.trim().length > 0 && v.length <= 12000;
+  return ['commonPrompt', 'responsePrompt', 'livePrompt', 'previewPrompt'].every(key => text(row[key])) &&
+    ['tap_vad', 'wake_prefix', 'push_to_talk'].every(key => text(row.activation?.[key])) &&
+    ['low', 'auto', 'high'].every(key => text(row.patience?.[key])) &&
+    ['pathfinder', 'creator', 'thinker', 'connector'].every(key => text(row.agents?.[key]?.personality) && text(row.agents?.[key]?.voiceDirection));
+}
 
 function isValidProfile(profile: Record<string, unknown>): boolean {
   const agents = new Set(["pathfinder", "creator", "thinker", "connector"]);

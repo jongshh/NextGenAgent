@@ -33,14 +33,14 @@ try {
 
   await page.getByTestId("mentor-pathfinder").click();
   await page.getByTestId("dialogue-box").click();
-  await page.getByLabel("선배에게 보낼 말").fill("첫 줄");
-  await page.getByLabel("선배에게 보낼 말").press("Shift+Enter");
-  const shiftEnterWorks = (await page.getByLabel("선배에게 보낼 말").inputValue()).includes("\n");
+  await page.getByLabel("현자에게 보낼 말").fill("첫 줄");
+  await page.getByLabel("현자에게 보낼 말").press("Shift+Enter");
+  const shiftEnterWorks = (await page.getByLabel("현자에게 보낼 말").inputValue()).includes("\n");
 
-  await page.getByLabel("선배에게 보낼 말").fill(
+  await page.getByLabel("현자에게 보낼 말").fill(
     "저는 곧 대학을 졸업하는데 무엇을 준비해야 할까요?"
   );
-  await page.getByLabel("선배에게 보낼 말").press("Enter");
+  await page.getByLabel("현자에게 보낼 말").press("Enter");
   await page.locator(".thinking-line").waitFor({ state: "visible", timeout: 5000 });
   const thinkingDotsA = await page.locator(".thinking-line .thinking-dots > span").count();
   await page.locator(".thinking-line").waitFor({ state: "hidden", timeout: 90000 });
@@ -73,7 +73,7 @@ try {
   await page.getByTestId('dialogue-box').waitFor({ state: 'visible' });
   const sessionRestored = await page.getByTestId("dialogue-box").isVisible();
 
-  await page.getByLabel("선배 선택으로 돌아가기").click();
+  await page.getByLabel("현자 선택으로 돌아가기").click();
   await page.getByTestId("ui-version-b").click();
   await page.getByTestId("mentor-pathfinder").click();
   await page.getByTestId("conversation-b-transcript").waitFor({ state: "visible" });
@@ -87,8 +87,8 @@ try {
   const assistantBox = await assistantBubble.boundingBox();
   const dmAlignmentWorks = Boolean(userBox && assistantBox && userBox.x > assistantBox.x);
 
-  await page.getByLabel("선배에게 보낼 말").fill("졸업 뒤 첫 선택이 계속 두려워요.");
-  await page.getByLabel("선배에게 보낼 말").press("Enter");
+  await page.getByLabel("현자에게 보낼 말").fill("졸업 뒤 첫 선택이 계속 두려워요.");
+  await page.getByLabel("현자에게 보낼 말").press("Enter");
   await page.locator(".conversation-b-thinking").waitFor({ state: "visible", timeout: 5000 });
   const thinkingDotsB = await page.locator(".conversation-b-thinking .thinking-dots > span").count();
   await page.locator(".conversation-b-thinking").waitFor({ state: "hidden", timeout: 90000 });

@@ -105,11 +105,11 @@ export function ConversationStage({
       <div className="conversation-overlay" />
 
       <header className="conversation-toolbar">
-        <button type="button" onClick={onBack} aria-label="선배 선택으로 돌아가기">
+        <button type="button" onClick={onBack} aria-label="현자 선택으로 돌아가기">
           <ArrowLeft size={19} />
         </button>
         <div className="conversation-identity">
-          <span>AI 선배 01</span>
+          <span>AI 현자 01</span>
           <strong>{agent.title}</strong>
         </div>
         <div className="toolbar-actions">
@@ -242,8 +242,8 @@ export function ConversationStage({
                 onSend(input);
               }
             }}
-            placeholder="선배에게 지금 마음을 들려주세요."
-            aria-label="선배에게 보낼 말"
+            placeholder="현자에게 지금 마음을 들려주세요."
+            aria-label="현자에게 보낼 말"
             rows={2}
             disabled={isLoading}
           />
@@ -266,7 +266,7 @@ export function ConversationStage({
 
       <SideDrawer open={sourcesOpen} title="이 답변의 바탕" onClose={() => setSourcesOpen(false)}>
         <p className="drawer-lead">
-          선배의 말은 아래 기록에서 공통된 선택과 회복의 패턴을 찾아 구성했습니다.
+          현자의 말은 아래 기록에서 공통된 선택과 회복의 패턴을 찾아 구성했습니다.
         </p>
         <div className="source-list">
           {citations.map((citation) => (

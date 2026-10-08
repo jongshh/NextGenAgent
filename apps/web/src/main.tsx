@@ -5,7 +5,7 @@ import { DeveloperVoicePanel } from "./components/DeveloperVoicePanel";
 import "./styles.css";
 
 const workerUrl = import.meta.env.VITE_WORKER_URL || (import.meta.env.DEV ? "http://localhost:8787" : "");
-const page = ['/developer', '/developer/voices', '/developer/lights'].includes(window.location.pathname)
+const page = ['/developer', '/developer/voices', '/developer/lights', '/developer/prompts'].includes(window.location.pathname)
   ? <DeveloperVoicePanel workerUrl={workerUrl} />
   : <App />;
 

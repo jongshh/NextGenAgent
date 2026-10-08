@@ -32,7 +32,7 @@ export function MentorHub({
           <span className="wordmark-mark">N</span>
           <span>
             <strong>NextGenAgent</strong>
-            <small>AI 선배와의 만남</small>
+            <small>AI 현자와의 만남</small>
           </span>
         </a>
         <div className="hub-controls">
@@ -59,14 +59,14 @@ export function MentorHub({
       </div>
 
       <section className="hub-intro" aria-labelledby="hub-title">
-        <p className="section-kicker">네 갈래의 질문, 네 명의 선배</p>
+        <p className="section-kicker">네 갈래의 질문, 네 명의 현자</p>
         <h1 id="hub-title">오늘은 누구와 이야기할까요?</h1>
         <p>
-          다양한 위인들의 경험을 바탕으로 고민을 덜기위해 만들어진 4명의 선배들을 만나보세요.
+          다양한 위인들의 경험을 바탕으로 고민을 덜기위해 만들어진 4명의 현자들을 만나보세요.
         </p>
       </section>
 
-      <section className="mentor-grid" aria-label="AI 선배 선택">
+      <section className="mentor-grid" aria-label="AI 현자 선택">
         {Object.values(AGENTS).map((agent, index) => {
           const visual = visuals[agent.id];
           return (

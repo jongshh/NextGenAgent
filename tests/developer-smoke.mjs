@@ -53,10 +53,33 @@ try {
     await page.getByText('프로필 저장 완료. 8초 동안 색상 흐름을 미리 봅니다.', { exact: true }).waitFor();
     assert.equal(actions.find(action => action.operation === 'preview').body.cue.preset, 'hopeful-guide');
     await page.screenshot({ path: `artifacts/screenshots/developer-lights-controls-${viewport.width}.png`, fullPage: true });
+    // Load real settings, but keep editorial smoke changes inside this browser test.
+    let promptPayload;
+    const promptWrites = [];
+    await page.route('**/api/admin/prompts', async route => {
+      if (route.request().method() === 'GET') {
+        if (!promptPayload) promptPayload = await (await route.fetch()).json();
+        return route.fulfill({ json: promptPayload });
+      }
+      const body = route.request().postDataJSON();
+      promptWrites.push(body);
+      promptPayload = { ...promptPayload, settings: body.settings, version: body.version + 1 };
+      return route.fulfill({ json: { configuration: body.settings, version: promptPayload.version } });
+    });
+    await page.getByRole('button', { name: '프롬프트', exact: true }).click();
+    const promptCard = page.getByRole('article', { name: '길을 찾는 사람 프롬프트', exact: true });
+    await promptCard.getByLabel('성격·대화 방식').fill('현자 프롬프트 편집 동작 검증');
+    await page.getByRole('button', { name: '전체 프롬프트 저장', exact: true }).click();
+    await page.getByText('프롬프트를 저장했습니다. 다음 텍스트 답변과 새 음성 세션부터 적용됩니다.', { exact: true }).waitFor();
+    assert.equal(promptWrites[0].settings.agents.pathfinder.personality, '현자 프롬프트 편집 동작 검증');
+    await page.getByRole('button', { name: '저장된 프롬프트 다시 불러오기', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '전체 프롬프트 저장' && !button.disabled));
+    assert.equal(await promptCard.getByLabel('성격·대화 방식').inputValue(), '현자 프롬프트 편집 동작 검증');
+    await page.screenshot({ path: `artifacts/screenshots/developer-prompts-${viewport.width}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
     assert.deepEqual(unauthorized, [], 'Opening the panel and signing in must not issue unauthenticated protected requests.');
     await context.close();
   }
-  console.log('Developer login and desktop/mobile lighting controls passed (equipment actions mocked).');
+  console.log('Developer login, desktop/mobile lighting and prompt editing passed (editorial/equipment changes mocked).');
 } finally { await browser.close(); }

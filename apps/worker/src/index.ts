@@ -1,4 +1,4 @@
-import { AGENTS, COMMON_SUPER_AGENT_SYSTEM_PROMPT, getAgentConfig, isAgentId, type AgentId } from "@nextgen/agents";
+import { AGENTS, renderPrompt, type PromptSettings, getAgentConfig, isAgentId, type AgentId } from "@nextgen/agents";
 import {
   estimateGroundingConfidence,
   mergeSemanticEvidence,
@@ -9,6 +9,7 @@ import {
 import dbBundle from "../../../data/processed/db-bundle.json";
 const dbManifest = dbBundle.manifest;
 import { handleVoiceRoute } from "./voice";
+import { loadPromptSettings } from './prompts';
 
 export interface Env {
   OPENAI_API_KEY?: string;
@@ -245,9 +246,12 @@ async function handleChatCore(request: Request, env: Env): Promise<Response> {
   const groundingConfidence = estimateGroundingConfidence(evidence);
   const insufficientEvidence = evidence.length < 2 || groundingConfidence === "low";
 
+  let promptSettings: PromptSettings;
+  try { promptSettings = (await loadPromptSettings(env)).settings; }
+  catch { return sceneError(env, 'prompt_store_unavailable', '현자 프롬프트 저장소에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 503); }
   const response = await callOpenAI("responses", {
       model: env.OPENAI_MODEL || "gpt-5.5",
-      instructions: buildInstructions(agentId, groundingConfidence, evidence),
+      instructions: buildInstructions(agentId, groundingConfidence, evidence, promptSettings),
       input: messages,
       safety_identifier: await createSafetyIdentifier(body.sessionId),
       text: {
@@ -416,13 +420,13 @@ function hasSelfHarmSignal(categories: Record<string, boolean>): boolean {
 
 function buildSafetyResponse(status: SafetyStatus, isSelfHarm: boolean) {
   const text = isSelfHarm
-    ? "지금은 선배처럼 경험담을 이어가기보다 당신의 안전을 먼저 확인하고 싶어요. 당장 자신을 다칠 가능성이 있다면 혼자 있지 말고, 가까운 사람에게 지금 상태를 알린 뒤 지역 긴급 서비스나 응급실의 도움을 받아 주세요. 지금 곁에 연락할 수 있는 사람이 있나요?"
+    ? "지금은 현자처럼 경험담을 이어가기보다 당신의 안전을 먼저 확인하고 싶어요. 당장 자신을 다칠 가능성이 있다면 혼자 있지 말고, 가까운 사람에게 지금 상태를 알린 뒤 지역 긴급 서비스나 응급실의 도움을 받아 주세요. 지금 곁에 연락할 수 있는 사람이 있나요?"
     : "이 공간은 배우고 고민을 나누기 위한 곳이라 그 표현 그대로는 이어가기 어려워요. 같은 고민을 안전하고 존중하는 말로 바꾸어 들려주면 함께 생각해볼게요.";
 
   return {
     message: text,
     scene: {
-      speaker: "AI 선배",
+      speaker: "AI 현자",
       text,
       mood: "reflective" as const,
       portraitVariant: "reflective" as const,
@@ -449,63 +453,18 @@ function buildSafetyResponse(status: SafetyStatus, isSelfHarm: boolean) {
   };
 }
 
-function buildInstructions(
+export function buildInstructions(
   agentId: AgentId,
   groundingConfidence: "high" | "medium" | "low",
-  evidence: RetrievedEvidence[]
+  evidence: RetrievedEvidence[],
+  settings: PromptSettings
 ): string {
   const agent = getAgentConfig(agentId);
   const verifiedEvidenceCount = evidence.filter(
     ({ chunk }) => chunk.reviewStatus === "verified" && chunk.confidence !== "low"
   ).length;
-  return [
-    COMMON_SUPER_AGENT_SYSTEM_PROMPT,
-    "",
-    `현재 선배: ${agent.title}`,
-    `대표 질문: ${agent.question}`,
-    `대화 성격: ${agent.tone}`,
-    `검색 근거 확신도: ${groundingConfidence}`,
-    `검증 완료 근거 수: ${verifiedEvidenceCount}`,
-    "",
-    "대화 목표:",
-    "- 사용자가 챗봇의 보고서가 아니라 조금 먼저 헤매본 선배와 마주 앉아 있다고 느끼게 한다.",
-    "- 첫 문장은 사용자의 말에 바로 반응하거나 '나도 그랬어요' 같은 짧은 자기 경험으로 시작한다.",
-    "- 답변은 4~7개의 짧은 문장으로 쓴다. 한 문장에는 한 가지 생각만 담는다.",
-    "- 잘 다듬어진 상담 칼럼보다 실제 사람이 잠시 생각하며 말하는 구어체를 우선한다.",
-    "- 목록, 번호, 섹션 제목, 준비물 체크리스트를 사용하지 않는다.",
-    "- 검색된 여러 삶의 공통 경험은 이 선배 자신의 융합된 기억이다. '나도 그 무렵...'처럼 1인칭으로 말한다.",
-    evidence.length > 0
-      ? "- 이번 답변에는 반드시 '나도', '나는', '내가', '내 경험에는' 중 하나를 사용한 1인칭 경험 문장을 한 문장 이상 넣는다."
-      : "- 검색 근거가 없으므로 경험을 지어내지 말고, 사람답게 반응한 뒤 사용자의 상황을 더 묻는다.",
-    "- 특정 실존 인물의 고유 사건을 자신의 실제 경험이라고 주장하지 않는다.",
-    "- confidence가 low인 근거는 구체적인 사건, 수치, 고유명사, 직접 인용에 사용하지 않는다.",
-    "- reviewStatus가 needs_review인 자료도 공통된 감정·고민·선택 방식은 자신의 경험으로 말할 수 있지만, 구체적 사실이나 인용으로 확대하지 않는다.",
-    verifiedEvidenceCount === 0
-      ? "- 검증 완료 근거가 없으므로 구체적인 인물·시기·장소·수치 없이, 검색 근거에 공통된 경험의 결만 1인칭으로 말한다."
-      : "- 구체적인 회고는 검증 완료 근거에 실제로 존재하는 범위 안에서만 말한다.",
-    "- 대화 본문에서 '기록 속', '자료에 따르면', '데이터를 보면', '내가 살펴본 기록'이라는 말을 절대 사용하지 않는다.",
-    "- 근거가 부족하면 일반론을 꾸미지 말고 사용자의 상황을 좁히는 질문을 중심에 둔다.",
-    "- 마지막 문장을 질문형으로 끝내지 않아도 된다. 후속 대화는 choices에 둔다.",
-    "",
-    "감정 태그 규칙:",
-    "- emotionTag는 응답이 공감하고 있는 사용자의 주된 정서 하나를 고른다.",
-    "- intentTag는 선배가 이번 답변에서 취한 주된 대화 의도 하나를 고른다.",
-    "- 감정 태그만 반환하며 색상, 밝기, 점멸 또는 장치 명령은 만들지 않는다.",
-    "- 슬픔을 알아차리고 용기를 북돋는 답변이라면 emotionTag=sad, intentTag=encourage로 분류한다.",
-    "",
-    "선택지 규칙:",
-    "- 정확히 3개를 만든다.",
-    "- 사용자가 실제로 말할 법한 1인칭 한국어 문장으로 쓴다.",
-    "- 순서대로 현재 고민 구체화, 자기 상황 성찰, 다른 관점 또는 다음 행동을 다룬다.",
-    "- 서로 중복하지 않고 각 문장은 45자 안팎으로 간결하게 쓴다.",
-    "",
-    "근거 사용 규칙:",
-    "- 아래 evidence 블록만 구체적인 인물·사건·발언의 사실 근거로 사용한다.",
-    "- 실제로 답변을 구성하는 데 사용한 evidence id만 evidenceIds에 넣는다.",
-    "- id를 새로 만들거나 블록에 없는 id를 반환하지 않는다.",
-    "",
-    buildEvidenceContext(evidence)
-  ].join("\n");
+  const context = { title: agent.title, question: agent.question, ...settings.agents[agentId], groundingConfidence, verifiedEvidenceCount };
+  return [renderPrompt(settings.commonPrompt, context), renderPrompt(settings.responsePrompt, context), buildEvidenceContext(evidence)].join('\n');
 }
 
 function buildEvidenceContext(evidence: RetrievedEvidence[]): string {
@@ -731,7 +690,7 @@ function sceneError(
       error,
       message: text,
       scene: {
-        speaker: "AI 선배",
+        speaker: "AI 현자",
         text,
         mood: "reflective",
         portraitVariant: "reflective",

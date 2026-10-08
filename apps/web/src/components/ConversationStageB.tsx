@@ -127,7 +127,7 @@ export function ConversationStageB({
   return (
     <main className="conversation-b-shell">
       <header className="conversation-b-toolbar">
-        <button type="button" onClick={onBack} aria-label="선배 선택으로 돌아가기">
+        <button type="button" onClick={onBack} aria-label="현자 선택으로 돌아가기">
           <ArrowLeft size={19} />
         </button>
         <ChatAvatar role="assistant" imageUrl={portrait} label={agent.title} />
@@ -274,8 +274,8 @@ export function ConversationStageB({
               onSend(input);
             }
           }}
-          placeholder="선배에게 지금 마음을 들려주세요."
-          aria-label="선배에게 보낼 말"
+          placeholder="현자에게 지금 마음을 들려주세요."
+          aria-label="현자에게 보낼 말"
           rows={1}
           disabled={isLoading}
         />
@@ -324,7 +324,7 @@ function SourceList({ citations }: { citations: Citation[] }) {
   return (
     <>
       <p className="drawer-lead">
-        선배의 경험은 아래 자료에서 공통된 선택과 회복의 패턴을 찾아 구성했습니다.
+        현자의 경험은 아래 자료에서 공통된 선택과 회복의 패턴을 찾아 구성했습니다.
       </p>
       <div className="source-list">
         {citations.map((citation) => (

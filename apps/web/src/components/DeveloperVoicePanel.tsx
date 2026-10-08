@@ -3,6 +3,7 @@ import { AGENTS, type AgentId } from "@nextgen/agents";
 import { LogOut, Play, Save, Volume2 } from "lucide-react";
 import type { VoiceActivationMode } from "../types";
 import { DeveloperHuePanel } from './DeveloperHuePanel';
+import { DeveloperPromptPanel } from './DeveloperPromptPanel';
 
 interface VoiceProfile {
   agentId: AgentId;
@@ -27,7 +28,7 @@ export function DeveloperVoicePanel({ workerUrl }: { workerUrl: string }) {
   const [profilePersistent, setProfilePersistent] = useState<boolean | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<'voices' | 'lights'>(() => window.location.pathname.endsWith('/lights') ? 'lights' : 'voices');
+  const [tab, setTab] = useState<'voices' | 'lights' | 'prompts'>(() => window.location.pathname.endsWith('/lights') ? 'lights' : window.location.pathname.endsWith('/prompts') ? 'prompts' : 'voices');
 
   useEffect(() => {
     let cancelled = false;
@@ -138,8 +139,9 @@ export function DeveloperVoicePanel({ workerUrl }: { workerUrl: string }) {
       <nav className="developer-tabs" aria-label="개발자 도구">
         <button type="button" aria-pressed={tab === 'voices'} onClick={() => setTab('voices')}>음성 설정</button>
         <button type="button" aria-pressed={tab === 'lights'} onClick={() => setTab('lights')}>조명 등록·제어</button>
+        <button type="button" aria-pressed={tab === 'prompts'} onClick={() => setTab('prompts')}>프롬프트</button>
       </nav>
-      {tab === 'lights' ? <DeveloperHuePanel /> : <>
+      {tab === 'lights' ? <DeveloperHuePanel /> : tab === 'prompts' ? <DeveloperPromptPanel workerUrl={workerUrl} voices={profiles} /> : <>
       <p className="voice-admin-disclosure">미리 듣기와 실제 대화에서 재생되는 목소리는 AI 합성 음성입니다. 활성 세션의 voice는 바뀌지 않으며 새 세션부터 적용됩니다.</p>
       {profilePersistent === false && <p className="voice-admin-message" role="status">현재 Supabase 음성 프로필 저장소가 연결되지 않아 기본 설정만 표시됩니다. 미리 듣기는 가능하지만 변경 사항은 저장되지 않습니다.</p>}
       {message && <p className="voice-admin-message" role="status">{message}</p>}

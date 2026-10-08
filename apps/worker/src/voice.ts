@@ -1,5 +1,6 @@
-import { AGENTS, getAgentConfig, isAgentId, type AgentId } from "@nextgen/agents";
+import { AGENTS, DEFAULT_PROMPT_SETTINGS, normalizePromptSettings, renderPrompt, getAgentConfig, isAgentId, type AgentId, type PromptSettings } from "@nextgen/agents";
 import type { Env } from "./index";
+import { hasPromptBackend, loadPromptSettings, promptApi } from './prompts';
 
 export type VoiceId = "alloy" | "ash" | "ballad" | "coral" | "echo" | "sage" |
   "shimmer" | "verse" | "marin" | "cedar";
@@ -75,6 +76,23 @@ export async function handleVoiceRoute(
     if (url.pathname === "/api/admin/session" && request.method === "GET") {
       return voiceJson(request, env, { authenticated: true });
     }
+    if (url.pathname === '/api/admin/prompts' && request.method === 'GET') {
+      try { return voiceJson(request, env, { ...await loadPromptSettings(env), defaults: DEFAULT_PROMPT_SETTINGS }); }
+      catch { return voiceJson(request, env, { error: '프롬프트 저장소에 연결하지 못했습니다.' }, 503); }
+    }
+    if (url.pathname === '/api/admin/prompts' && request.method === 'PUT') {
+      if (!hasPromptBackend(env)) return voiceJson(request, env, { error: '프롬프트 저장소가 연결되지 않았습니다.' }, 503);
+      const body = await readJson<{ settings?: unknown; version?: number }>(request);
+      let settings: PromptSettings;
+      try {
+        settings = normalizePromptSettings(body?.settings);
+        if (!Number.isSafeInteger(body?.version) || body!.version! < 0) throw new Error('프롬프트 버전이 올바르지 않습니다.');
+      } catch (error) { return voiceJson(request, env, { error: error instanceof Error ? error.message : '잘못된 프롬프트' }, 400); }
+      try {
+        const response = await promptApi({ action: 'prompts-save', configuration: settings, version: body!.version }, env);
+        return new Response(await response.text(), { status: response.status, headers: { ...voiceCorsHeaders(request, env), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+      } catch { return voiceJson(request, env, { error: '프롬프트를 저장하지 못했습니다.' }, 503); }
+    }
     if (url.pathname === "/api/admin/voice-profiles" && request.method === "GET") {
       const profiles = await loadAllProfiles(env);
       return voiceJson(request, env, { profiles, persistent: hasProfileBackend(env) });
@@ -115,6 +133,9 @@ async function createVoiceSession(request: Request, env: Env, preview: boolean):
   }
 
   const saved = await loadProfile(body.agentId, env);
+  let settings: PromptSettings;
+  try { settings = (await loadPromptSettings(env)).settings; }
+  catch { return voiceJson(request, env, { error: 'prompt_store_unavailable', message: '현자 프롬프트 저장소에 연결하지 못했습니다.' }, 503); }
   const requested = preview ? normalizeProfile(body.profile, body.agentId, saved) : saved;
   if (!requested.enabled) return voiceJson(request, env, { error: "voice_profile_disabled" }, 409);
   const activationMode = body.activationMode && ACTIVATION_MODES.has(body.activationMode)
@@ -124,7 +145,7 @@ async function createVoiceSession(request: Request, env: Env, preview: boolean):
   const payload = {
     session: {
       model: env.OPENAI_LIVE_MODEL?.trim() || requested.model,
-      instructions: buildLiveInstructions(body.agentId, requested, activationMode, preview),
+      instructions: buildLiveInstructions(body.agentId, requested, activationMode, preview, settings),
       audio: { output: { voice: requested.voiceId } },
       delegation: { type: "client" }
     },
@@ -167,35 +188,14 @@ export function buildLiveInstructions(
   agentId: AgentId,
   profile: VoiceProfile,
   activationMode: VoiceActivationMode,
-  preview = false
+  preview = false,
+  settings: PromptSettings = DEFAULT_PROMPT_SETTINGS
 ): string {
   const agent = getAgentConfig(agentId);
-  if (preview) {
-    return `당신은 ${agent.title}의 음성 미리듣기입니다. 한국어로 말합니다. ${profile.speakingInstructions}`;
-  }
-  const activation = activationMode === "wake_prefix"
-    ? "사용자가 '현자님' 또는 '현자 님'으로 말을 시작했을 때만 본 답변을 위해 백엔드에 위임한다. 다른 주변 대화에는 침묵한다."
-    : activationMode === "push_to_talk"
-      ? "마이크가 열렸을 때 들어온 한 발화를 한 요청으로 취급한다."
-      : "사용자의 자연스러운 한국어 발화를 듣고 충분히 끝난 뒤 응답한다.";
-  const patience = profile.eagerness === "low"
-    ? "사용자가 잠시 뜸을 들여도 말을 끝낼 때까지 넉넉히 기다린다."
-    : profile.eagerness === "high"
-      ? "사용자가 분명히 말을 마치면 빠르게 다음 단계로 넘어간다."
-      : "짧은 생각의 침묵은 기다리되 완결된 발화에는 자연스럽게 반응한다.";
-  return [
-    `당신은 AI 현자 '${agent.title}'의 실시간 음성 인터페이스다. 항상 한국어로 말한다.`,
-    profile.speakingInstructions,
-    "Backchannel policy: 사용자의 말을 방해하지 않는 짧은 맞장구만 허용한다.",
-    "Interruption policy: 사용자가 끼어들면 즉시 말을 멈추고 끝까지 듣는다.",
-    `Activation policy: ${activation}`,
-    patience,
-    "Delegation policy:",
-    "Backend tools: mentor_reply는 검증된 인터뷰 RAG, 안전 검사, 감정 태그와 조명 큐를 포함한 유일한 현자 답변을 만든다.",
-    "인사말을 제외한 모든 질문, 고민, 후속 발화는 반드시 client backend에 위임한다.",
-    "백엔드 결과를 받기 전에는 조언하거나 결과를 추측하지 않는다.",
-    "백엔드가 준 답변은 단어를 바꾸거나 요약하거나 내용을 추가하지 말고, 받은 문장 그대로 자연스럽게 읽는다."
-  ].join("\n");
+  const context = { title: agent.title, question: agent.question, ...settings.agents[agentId],
+    speakingInstructions: profile.speakingInstructions.replaceAll('선배', '현자'),
+    activation: settings.activation[activationMode], patience: settings.patience[profile.eagerness] };
+  return [renderPrompt(settings.commonPrompt, context), renderPrompt(preview ? settings.previewPrompt : settings.livePrompt, context)].join('\n');
 }
 
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
@@ -271,7 +271,7 @@ export function normalizeProfile(value: unknown, agentId: AgentId, fallback: Voi
     provider: "openai-live",
     model: cleanString(row.model, fallback.model, 80),
     voiceId,
-    speakingInstructions: cleanString(row.speakingInstructions, fallback.speakingInstructions, 600),
+    speakingInstructions: cleanString(row.speakingInstructions, fallback.speakingInstructions, 600).replaceAll('선배', '현자'),
     activationMode,
     eagerness,
     previewText: cleanString(row.previewText, fallback.previewText, 300),

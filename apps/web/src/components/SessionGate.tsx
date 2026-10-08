@@ -25,7 +25,7 @@ export function SessionGate({ isLoading, errorMessage, onContinue }: SessionGate
           <span className="wordmark-mark">N</span>
           <span>
             <strong>NextGenAgent</strong>
-            <small>AI 선배와의 만남</small>
+            <small>AI 현자와의 만남</small>
           </span>
         </a>
 

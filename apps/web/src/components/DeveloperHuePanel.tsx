@@ -70,11 +70,11 @@ export function DeveloperHuePanel() {
       <button disabled={busy} onClick={() => void run(async () => { const result = await api('discover', {}); setBridges(result.bridges); if (result.bridges.length === 1) setIp(result.bridges[0].ip); if (result.message) setMessage(result.message); })}>자동 검색</button>
       {bridges.map(bridge => <button disabled={busy} key={bridge.ip} onClick={() => setIp(bridge.ip)}>{bridge.ip}</button>)}
       <label>Bridge 로컬 IP<input value={ip} onChange={event => setIp(event.target.value)} placeholder="192.168.1.10" /></label>
-      <button disabled={busy || !ip} onClick={() => void run(pair, 'Bridge 등록 완료. 선배별 전구를 지정하세요.')}>연결·버튼 인증</button>
+      <button disabled={busy || !ip} onClick={() => void run(pair, 'Bridge 등록 완료. 현자별 전구를 지정하세요.')}>연결·버튼 인증</button>
     </div>
     {message && <p className="voice-admin-message" role="status">{message}</p>}
     <div className="voice-profile-card">
-      <h2>선배별 전구 지정</h2>
+      <h2>현자별 전구 지정</h2>
       {(Object.keys(AGENTS) as AgentId[]).map(id => <label key={id}>{AGENTS[id].title}
         <select disabled={busy} value={targets[id] || ''} onChange={event => { dirty.current = true; setTargets(current => ({ ...current, [id]: event.target.value })); }}>
           <option value="">전구 선택</option>

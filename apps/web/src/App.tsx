@@ -59,25 +59,25 @@ const MENTOR_VISUALS: Record<
     image: "/assets/mentor-pathfinder-silhouette.png",
     number: "01",
     accent: "#f1b84b",
-    promise: "갈림길을 지나온 선배"
+    promise: "갈림길을 지나온 현자"
   },
   creator: {
     image: "/assets/mentor-creator-silhouette.png",
     number: "02",
     accent: "#cf7565",
-    promise: "멈춤을 재료로 바꾸는 선배"
+    promise: "멈춤을 재료로 바꾸는 현자"
   },
   thinker: {
     image: "/assets/mentor-thinker-silhouette.png",
     number: "03",
     accent: "#4fa7a0",
-    promise: "정답보다 기준을 묻는 선배"
+    promise: "정답보다 기준을 묻는 현자"
   },
   connector: {
     image: "/assets/mentor-connector-silhouette.png",
     number: "04",
     accent: "#d39b35",
-    promise: "두려움 속에서도 준비하며 나아가는 선배"
+    promise: "두려움 속에서도 준비하며 나아가는 현자"
   }
 };
 
@@ -430,7 +430,7 @@ export default function App() {
   }
 
   function resetConversation() {
-    const confirmed = window.confirm("이 선배와의 대화 기록을 지우고 새로 시작할까요?");
+    const confirmed = window.confirm("이 현자와의 대화 기록을 지우고 새로 시작할까요?");
     if (!confirmed) return;
     void stopVoiceConversation();
     removeSession(agentId);

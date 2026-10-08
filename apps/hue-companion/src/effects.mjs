@@ -75,7 +75,7 @@ export class HueEffectController {
   async play(request) {
     await this.stop(undefined, false);
     const resourceId = this.targets[request.agentId];
-    if (!resourceId) throw new Error("선배에 매핑된 Hue 전구가 없습니다.");
+    if (!resourceId) throw new Error("현자에 매핑된 Hue 전구가 없습니다.");
     const original = await this.client.getLight(resourceId);
     if (!this.baselines.has(resourceId)) this.baselines.set(resourceId, original);
     const controller = new AbortController();

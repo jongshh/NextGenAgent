@@ -60,8 +60,9 @@ export async function writeWorkerConfig(webOnly = false) {
   await atomicWrite('.local/worker/.dev.vars', Object.entries(runtimeSettings(vars)).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n') + '\n');
   await atomicWrite('.local/worker/wrangler.json', JSON.stringify({
     name: 'nextgenagent-worker', main: `${root}/apps/worker/src/index.ts`, compatibility_date: '2026-09-27', compatibility_flags: ['nodejs_compat'],
-    vars: { NEXTGEN_INSTANCE_ID: instance, ALLOWED_ORIGIN: 'http://127.0.0.1:4173,http://localhost:4173,http://127.0.0.1:5173,http://localhost:5173' },
-    assets: { directory: `${root}/apps/web/dist`, binding: 'ASSETS', not_found_handling: 'single-page-application', run_worker_first: ['/api/*'] }
+    // Companion serves the built web locally. A second assets proxy can stall
+    // API requests in the Windows workerd runtime during rebuilds.
+    vars: { NEXTGEN_INSTANCE_ID: instance, ALLOWED_ORIGIN: 'http://127.0.0.1:4173,http://localhost:4173,http://127.0.0.1:5173,http://localhost:5173' }
   }, null, 2));
   await atomicWrite('.local/instance.json', JSON.stringify({ instanceId: instance, webOnly }));
   if (!await json('.local/control.json').catch(() => null)) await atomicWrite('.local/control.json', JSON.stringify({ token: randomBytes(32).toString('base64url') }));

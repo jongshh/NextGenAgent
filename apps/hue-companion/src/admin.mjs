@@ -82,7 +82,7 @@ export class HueAdmin {
     return light;
   }
   async mappings(targets) {
-    if (!targets || Object.keys(targets).length !== 4 || agents.some(id => typeof targets[id] !== 'string') || new Set(Object.values(targets)).size !== 4) throw new HueAdminError('네 선배에 서로 다른 컬러 전구를 지정하세요.');
+    if (!targets || Object.keys(targets).length !== 4 || agents.some(id => typeof targets[id] !== 'string') || new Set(Object.values(targets)).size !== 4) throw new HueAdminError('네 현자에 서로 다른 컬러 전구를 지정하세요.');
     for (const id of Object.values(targets)) await this.light(id, true);
     await this.controller.reset();
     const config = { ...this.config, targets };
